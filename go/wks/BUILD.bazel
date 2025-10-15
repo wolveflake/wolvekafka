@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "wks",
+    srcs = ["service.go"],
+    importpath = "wolvekafka/go/wks",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//go/common/logger",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "wks_test",
+    srcs = ["service_test.go"],
+    embed = [":wks"],
+    deps = ["@com_github_stretchr_testify//assert"],
+)
