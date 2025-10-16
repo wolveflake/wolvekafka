@@ -53,23 +53,36 @@ message Lambda {
   uint32 weight = 2;
 }
 
+message BatchConsumer {
+  // number of messages to process in a single batch.
+  uint32 batch_size = 1;
+}
+
+message ParallelConsumer {
+  // number of parallel threads to process messages.
+  uint32 parallelism = 1;
+}
+
 message Consumer {
-    // unique identifier for the consumer group.
+    // Unique identifier for the consumer group.
     string group_id = 1;
 
-    // list of topics the consumer subscribes to.
+    // List of topics the consumer subscribes to.
     repeated string topics = 2;
 
     // Kafka cluster configuration.
     Cluster cluster = 3;
 
-    // retry policy for message consumption.
+    // Retry policy for message consumption.
     RetryPolicy retry_policy = 4;
 
-    // number of messages to process in a single batch.
-    uint32 batch_size = 5;
+    // List of lambdas associated with the consumer.
+    repeated Lambda lambdas = 5;
 
-    // list of lambdas associated with the consumer.
-    repeated Lambda lambdas = 6;
+    // Type of consumer.
+    oneof ConsumerType {
+      BatchConsumer batch = 6;
+      ParallelConsumer parallel= 7;
+    }
 
 }
