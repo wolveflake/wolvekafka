@@ -4,7 +4,10 @@ load("@rules_proto//proto:defs.bzl", "proto_library")
 
 proto_library(
     name = "configs_proto",
-    srcs = ["configs.proto"],
+    srcs = [
+        "configs.proto",
+        "consumer.proto",
+    ],
     visibility = ["//visibility:public"],
 )
 

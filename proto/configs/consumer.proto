@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package configs;
+option go_package = "wolvekafka/proto/configs";
+
+message Cluster {
+    string bootstrap_servers = 1;
+    string sasl_username = 4;
+    string sasl_password = 5;
+}
+
+message DropAction {
+}
+
+message DLQAction {
+    // Kafka cluster for the DLQ.
+    Cluster cluster = 1;
+
+    // Topic for the DLQ.
+    string topic = 2;
+
+    // Maximum number of attempts to move the message to the DLQ.
+    uint32 max_attempts = 3;
+}
+
+
+// Retry policy for message consumption.
+message RetryPolicy {
+    // Maximum number of retries before giving up.
+    int32 max_retries = 1;
+    // Initial backoff duration in milliseconds.
+    int32 initial_backoff_ms = 2;
+    // Maximum backoff duration in milliseconds.
+    int32 max_backoff_ms = 3;
+
+    oneof action {
+      // Immediately drop the message after retries are exhausted.
+      DropAction drop = 4;
+
+      // Move the message to a dead-letter queue (DLQ).
+      DLQAction dlq = 5;
+    }
+}
+
+// Lambda represents a serverless function that can be invoked as part of a workflow.
+message Lambda {
+  // Required.
+  // url is the endpoint where the lambda can be accessed.
+  string url = 1;
+
+  // Optional. Default is 100.
+  // weight is used to determine the probability of selecting this lambda when multiple lambdas are available.
+  uint32 weight = 2;
+}
+
+message Consumer {
+    // unique identifier for the consumer group.
+    string group_id = 1;
+
+    // list of topics the consumer subscribes to.
+    repeated string topics = 2;
+
+    // Kafka cluster configuration.
+    Cluster cluster = 3;
+
+    // retry policy for message consumption.
+    RetryPolicy retry_policy = 4;
+
+    // number of messages to process in a single batch.
+    uint32 batch_size = 5;
+
+    // list of lambdas associated with the consumer.
+    repeated Lambda lambdas = 6;
+
+}
