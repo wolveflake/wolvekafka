@@ -3,5 +3,13 @@ syntax = "proto3";
 package configs;
 option go_package = "wolvekafka/proto/configs";
 
+import "proto/configs/cluster.proto";
+import "proto/configs/consumer.proto";
+
 message Config {
+  // Cluster holds the Kafka cluster configuration.
+  Cluster cluster = 1;
+
+  // List of consumers to be configured.
+  repeated Consumer consumers = 2;
 }

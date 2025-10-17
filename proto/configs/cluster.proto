@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package configs;
+option go_package = "wolveflow/proto/configs";
+
+// Cluster holds the configuration details for connecting to a Kafka cluster.
+message Cluster {
+  // List of bootstrap servers for the Kafka cluster.
+	repeated string bootstrap_servers = 1;
+
+  // SASL username for authenticating with the Kafka cluster.
+  string sasl_username = 4;
+
+  // SASL password for authenticating with the Kafka cluster.
+	string sasl_password = 5;
+}
