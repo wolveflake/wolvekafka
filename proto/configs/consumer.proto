@@ -3,11 +3,7 @@ syntax = "proto3";
 package configs;
 option go_package = "wolvekafka/proto/configs";
 
-message Cluster {
-    string bootstrap_servers = 1;
-    string sasl_username = 4;
-    string sasl_password = 5;
-}
+import "proto/configs/cluster.proto";
 
 message DropAction {
 }
@@ -70,19 +66,15 @@ message Consumer {
     // List of topics the consumer subscribes to.
     repeated string topics = 2;
 
-    // Kafka cluster configuration.
-    Cluster cluster = 3;
-
     // Retry policy for message consumption.
-    RetryPolicy retry_policy = 4;
+    RetryPolicy retry_policy = 3;
 
     // List of lambdas associated with the consumer.
-    repeated Lambda lambdas = 5;
+    repeated Lambda lambdas = 4;
 
     // Type of consumer.
     oneof ConsumerType {
-      BatchConsumer batch = 6;
-      ParallelConsumer parallel= 7;
+      BatchConsumer batch = 5;
+      ParallelConsumer parallel= 6;
     }
-
 }
