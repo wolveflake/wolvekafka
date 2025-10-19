@@ -3,6 +3,7 @@ module wolvekafka
 go 1.25
 
 require (
+	github.com/confluentinc/confluent-kafka-go/v2 v2.12.0
 	github.com/dropbox/godropbox v0.0.0-20230623171840-436d2007a9fd
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.11.1

@@ -12,6 +12,38 @@ SCALA_VERSION="$3"
 KAFKA_VERSION="$4"
 OUTPUT="$5"
 
+determine_jre_arch() {
+  if [[ -n "${JRE_ARCH_OVERRIDE:-}" ]]; then
+    echo "${JRE_ARCH_OVERRIDE}"
+    return
+  fi
+
+  local uname_arch
+  uname_arch=$(uname -m)
+  case "$uname_arch" in
+    arm64|aarch64)
+      echo "aarch64"
+      ;;
+    *)
+      echo "x64"
+      ;;
+  esac
+}
+
+JRE_ARCH=$(determine_jre_arch)
+case "$JRE_ARCH" in
+  x64)
+    ;; # noop
+  aarch64)
+    # Replace the architecture segment in the provided URL.
+    JRE_URL="${JRE_URL/_x64_/_${JRE_ARCH}_}"
+    ;;
+  *)
+    echo "unsupported JRE_ARCH '$JRE_ARCH'" >&2
+    exit 1
+    ;;
+esac
+
 TMP=$(mktemp -d)
 cleanup() {
   rm -rf "$TMP"
