@@ -1,0 +1,50 @@
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+
+KAFKA_VERSION = "4.1.0"
+
+SCALA_VERSION = "2.13"
+
+KAFKA_TARBALL = "kafka_%s-%s.tgz" % (SCALA_VERSION, KAFKA_VERSION)
+
+KAFKA_URL = "https://archive.apache.org/dist/kafka/%s/%s" % (KAFKA_VERSION, KAFKA_TARBALL)
+
+JRE_URL = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jre_x64_linux_hotspot_17.0.12_7.tar.gz"
+
+# NOTE: This genrule performs remote downloads at build time to assemble a Kafka root filesystem layer.
+# Consider mirroring artifacts or using http_file if hermetic builds are required.
+genrule(
+    name = "kafka_rootfs",
+    srcs = ["rootfs_builder.sh"],
+    outs = ["kafka-rootfs.tar.gz"],
+    cmd = "$(location rootfs_builder.sh) %s %s %s %s $@" % (
+        JRE_URL,
+        KAFKA_URL,
+        SCALA_VERSION,
+        KAFKA_VERSION,
+    ),
+    tools = [],
+    visibility = ["//visibility:private"],
+)
+
+oci_image(
+    name = "kafka_image",
+    base = "@ubuntu//:ubuntu",
+    cmd = ["/opt/kafka/config/server.properties"],
+    entrypoint = ["/usr/local/bin/kafka-entrypoint.sh"],
+    env = {
+        "JAVA_HOME": "/opt/jre",
+        "KAFKA_HOME": "/opt/kafka",
+        "PATH": "/usr/local/bin:/opt/kafka/bin:/opt/jre/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
+    },
+    exposed_ports = ["9092/tcp"],
+    tars = [":kafka_rootfs"],
+    visibility = ["//visibility:public"],
+    workdir = "/opt/kafka",
+)
+
+oci_load(
+    name = "kafka_image_tarball",
+    image = ":kafka_image",
+    repo_tags = ["kafka:%s" % KAFKA_VERSION],
+    visibility = ["//visibility:public"],
+)
