@@ -13,6 +13,41 @@ JRE_URL = "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-
 # NOTE: This genrule performs remote downloads at build time to assemble a Kafka root filesystem layer.
 # Consider mirroring artifacts or using http_file if hermetic builds are required.
 genrule(
+    name = "kafka_image_repo_tags",
+    outs = ["kafka_image_tarball.tags.txt"],
+    cmd = "printf 'kafka:%s\\n' > $@" % KAFKA_VERSION,
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "kafka_image_cmd",
+    outs = ["kafka_image.cmd.txt"],
+    cmd = "printf '/opt/kafka/config/server.properties\\n' > $@",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "kafka_image_entrypoint",
+    outs = ["kafka_image.entrypoint.txt"],
+    cmd = "printf '/usr/local/bin/kafka-entrypoint.sh\\n' > $@",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "kafka_image_env",
+    outs = ["kafka_image.env.txt"],
+    cmd = "printf 'JAVA_HOME=/opt/jre\\nKAFKA_HOME=/opt/kafka\\nPATH=/usr/local/bin:/opt/kafka/bin:/opt/jre/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin\\n' > $@",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "kafka_image_exposed_ports",
+    outs = ["kafka_image.exposed_ports.txt"],
+    cmd = "printf '9092/tcp\n' > $@",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
     name = "kafka_rootfs",
     srcs = ["rootfs_builder.sh"],
     outs = ["kafka-rootfs.tar.gz"],
@@ -29,14 +64,10 @@ genrule(
 oci_image(
     name = "kafka_image",
     base = "@ubuntu//:ubuntu",
-    cmd = ["/opt/kafka/config/server.properties"],
-    entrypoint = ["/usr/local/bin/kafka-entrypoint.sh"],
-    env = {
-        "JAVA_HOME": "/opt/jre",
-        "KAFKA_HOME": "/opt/kafka",
-        "PATH": "/usr/local/bin:/opt/kafka/bin:/opt/jre/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin",
-    },
-    exposed_ports = ["9092/tcp"],
+    cmd = ":kafka_image_cmd",
+    entrypoint = ":kafka_image_entrypoint",
+    env = ":kafka_image_env",
+    exposed_ports = ":kafka_image_exposed_ports",
     tars = [":kafka_rootfs"],
     visibility = ["//visibility:public"],
     workdir = "/opt/kafka",
@@ -45,6 +76,6 @@ oci_image(
 oci_load(
     name = "kafka_image_tarball",
     image = ":kafka_image",
-    repo_tags = ["kafka:%s" % KAFKA_VERSION],
+    repo_tags = ":kafka_image_repo_tags",
     visibility = ["//visibility:public"],
 )
