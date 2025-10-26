@@ -20,7 +20,9 @@ package wks
 import (
 	"context"
 	"wolvekafka/go/common/logger"
+	"wolvekafka/go/configs"
 
+	"github.com/dropbox/godropbox/executor"
 	"go.uber.org/zap"
 )
 
@@ -28,14 +30,24 @@ type WolveKafkaService struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 
+	// service parameters.
+	params *WolveKafkaParams
+
 	// logger.
 	log *zap.SugaredLogger
+
+	consumers []executor.Executor
 }
 
+// WolveKafkaParams holds parameters for WKS service.
 type WolveKafkaParams struct {
+	config *configs.Config
+
+	// event sending function (mostly for testing purposes).
+	sendEventFunc sendEventFunc
 }
 
-// NewEventState creates instance of event source.
+// NewWolveKafkaService creates a new WKS service instance.
 func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveKafkaService, error) {
 	srvCtx, cancelFunc := context.WithCancel(ctx)
 
@@ -43,6 +55,7 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 		ctx:       srvCtx,
 		ctxCancel: cancelFunc,
 		log:       logger.S(),
+		params:    &params,
 	}
 
 	return s, nil
