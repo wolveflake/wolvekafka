@@ -2,11 +2,18 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "wks",
-    srcs = ["service.go"],
+    srcs = [
+        "consumer_job.go",
+        "event.go",
+        "service.go",
+    ],
     importpath = "wolvekafka/go/wks",
     visibility = ["//visibility:public"],
     deps = [
         "//go/common/logger",
+        "//go/configs",
+        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
+        "@com_github_dropbox_godropbox//executor",
         "@org_uber_go_zap//:zap",
     ],
 )
