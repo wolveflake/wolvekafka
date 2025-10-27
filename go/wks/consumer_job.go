@@ -36,9 +36,6 @@ type ConsumerJob struct {
 	// events to send to consumer for processing.
 	event []*Event
 
-	// priority of the job (low value -> bigger priority).
-	priority uint16
-
 	sendEventFunc sendEventFunc
 
 	// logger instance.
@@ -55,22 +52,17 @@ func defaultSendEventFunc(ctx context.Context, event []*Event) error {
 	return nil
 }
 
-func newConsumerJob(ctx context.Context, event []*Event, priority uint16) *ConsumerJob {
+func newConsumerJob(ctx context.Context, event []*Event) *ConsumerJob {
 	ctxJob, ctxCancel := context.WithCancel(ctx)
 
 	return &ConsumerJob{
 		ctx:           ctxJob,
 		ctxCancel:     ctxCancel,
 		event:         event,
-		priority:      priority,
 		sendEventFunc: defaultSendEventFunc,
 		// creation time.
 		jobCreationStartTime: time.Now(),
 	}
-}
-
-func (e *ConsumerJob) Priority() uint16 {
-	return e.priority
 }
 
 func (e *ConsumerJob) Execute() {

@@ -19,11 +19,19 @@ package wks
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
+	"time"
 	"wolvekafka/go/common/logger"
 	"wolvekafka/go/configs"
 
 	"github.com/dropbox/godropbox/executor"
 	"go.uber.org/zap"
+)
+
+const (
+	defaultNumWorkers   = 10
+	defaultQueueTimeout = time.Second * 10
 )
 
 type WolveKafkaService struct {
@@ -36,7 +44,8 @@ type WolveKafkaService struct {
 	// logger.
 	log *zap.SugaredLogger
 
-	consumers []executor.Executor
+	mu        sync.Mutex   // one update at a time.
+	consumers atomic.Value // map[string]*executor.WorkPoolExecutor
 }
 
 // WolveKafkaParams holds parameters for WKS service.
@@ -57,6 +66,52 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 		log:       logger.S(),
 		params:    &params,
 	}
+	s.consumers.Store(make(map[string]*executor.WorkPoolExecutor))
+
+	// initial configuration.
+	s.updateConfig(params.config)
 
 	return s, nil
+}
+
+func (w *WolveKafkaService) Serve() error {
+	return nil
+}
+
+func (w *WolveKafkaService) updateConfig(config *configs.Config) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	currentConsumers := w.consumers.Load().(map[string]*executor.WorkPoolExecutor)
+	newConsumers := make(map[string]executor.Executor)
+
+	for _, consumerCfg := range config.Consumers() {
+		consumerName := consumerCfg.GetGroupId()
+		if existingConsumer, exists := currentConsumers[consumerName]; exists {
+			newConsumers[consumerName] = existingConsumer
+			delete(currentConsumers, consumerName)
+		} else {
+			workPoolParams := executor.WorkPoolExecutorParams{
+				NumWorkers:   defaultNumWorkers,
+				QueueTimeout: defaultQueueTimeout,
+			}
+			workPool := executor.NewWorkPoolExecutor()
+			err := workPool.Configure(workPoolParams)
+			if err != nil {
+				w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
+			} else {
+				newConsumers[consumerName] = workPool
+			}
+		}
+	}
+
+	// Shutdown removed consumers.
+	for consumerName, exec := range currentConsumers {
+		w.log.Infof("stopping consumer %s", consumerName)
+		exec.Configure(executor.WorkPoolExecutorParams{
+			NumWorkers: 0,
+		})
+	}
+
+	w.consumers.Store(newConsumers)
 }
