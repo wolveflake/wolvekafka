@@ -1,7 +1,6 @@
 package configs
 
 import (
-	"context"
 	"fmt"
 
 	"wolvekafka/go/common/logger"
@@ -17,14 +16,25 @@ type Config struct {
 	log *zap.SugaredLogger
 }
 
-func NewConfigFromProto(ctx context.Context, proto *configs_pb.Config) (*Config, error) {
+func NewConfigFromProto(proto *configs_pb.Config) (*Config, error) {
 	if proto == nil {
 		return nil, fmt.Errorf("nil config proto")
 	}
 
-	return &Config{
+	cfg := &Config{
 		proto: proto,
 
 		log: logger.S(),
-	}, nil
+	}
+
+	err := Validate(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("invalid config proto: %v", err)
+	}
+
+	return cfg, nil
+}
+
+func (c *Config) Consumers() []*configs_pb.Consumer {
+	return c.proto.GetConsumers()
 }
