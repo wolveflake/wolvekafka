@@ -20,7 +20,6 @@ package wks
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -34,9 +33,13 @@ const (
 	defaultPoolDurationMs = 100
 )
 
+type poolFunc func() ([]*kafka.Message, error)
+
 type Consumer struct {
 	// consumer name.s
 	name string
+
+	ctx context.Context
 
 	// polling duration in milliseconds.
 	poolDurationMs int
@@ -46,6 +49,8 @@ type Consumer struct {
 
 	// logger.
 	log *zap.SugaredLogger
+
+	poolFunc poolFunc
 }
 
 type ConsumerParams struct {
@@ -60,8 +65,12 @@ type ConsumerParams struct {
 
 	// topics to subscribe to.
 	Topics []string
+
+	// polling function (mostly for testing purposes).
+	poolFunc poolFunc
 }
 
+// NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
 func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) {
 	consumer := newConsumer(ctx, params)
 
@@ -73,9 +82,9 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 	}
 
 	// subscribe to topics.
-	err = consumer.SubscribeTopics(params.Topics, nil)
+	err = kafkaConsumer.SubscribeTopics(params.Topics, nil)
 	if err != nil {
-		consumer.log.Errorf("Failed to subscribe to %v topics, %s consumer: %v", consumer.params.Topics, params.Name, err)
+		consumer.log.Errorf("Failed to subscribe to %v topics, %s consumer: %v", params.Topics, params.Name, err)
 		return nil, err
 	}
 
@@ -93,8 +102,19 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	log := logger.S()
 
 	return &Consumer{
+		ctx:            ctx,
 		name:           params.Name,
 		poolDurationMs: defaultPoolDurationMs,
 		log:            log,
+		poolFunc:       params.poolFunc,
 	}
+}
+
+// Pool polls a message from Kafka.
+func (c *Consumer) Pool() ([]*kafka.Message, error) {
+	if c.poolFunc != nil {
+		return c.poolFunc()
+	}
+
+	return nil, fmt.Errorf("not implemented")
 }
