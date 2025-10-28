@@ -26,6 +26,7 @@ import (
 	"go.uber.org/zap"
 
 	"wolvekafka/go/common/logger"
+	configs_pb "wolvekafka/proto/configs"
 )
 
 const (
@@ -33,7 +34,7 @@ const (
 	defaultPoolDurationMs = 100
 )
 
-type poolFunc func() ([]*kafka.Message, error)
+type poolFunc func() (chan []*kafka.Message, error)
 
 type Consumer struct {
 	// consumer name.s
@@ -58,7 +59,7 @@ type ConsumerParams struct {
 	Name string
 
 	// Kafka consumer configuration.
-	ConfigMap *kafka.ConfigMap
+	Cluster *configs_pb.Cluster
 
 	// polling duration.
 	PoolDuration time.Duration
@@ -74,8 +75,18 @@ type ConsumerParams struct {
 func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) {
 	consumer := newConsumer(ctx, params)
 
+	bootstrapServers := ""
+	for _, server := range params.Cluster.BootstrapServers {
+		bootstrapServers += "," + server
+	}
+	configMap := &kafka.ConfigMap{
+		"bootstrap.servers": bootstrapServers,
+		"group.id":          params.Name,
+		"auto.offset.reset": "earliest",
+	}
+
 	// create Kafka consumer.
-	kafkaConsumer, err := kafka.NewConsumer(params.ConfigMap)
+	kafkaConsumer, err := kafka.NewConsumer(configMap)
 	if err != nil {
 		consumer.log.Errorf("Failed to create %v consumer: %v", params.Name, err)
 		return nil, err
@@ -110,11 +121,21 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	}
 }
 
-// Pool polls a message from Kafka.
-func (c *Consumer) Pool() ([]*kafka.Message, error) {
+// Poll polls a message from Kafka.
+func (c *Consumer) Poll() (chan []*kafka.Message, error) {
 	if c.poolFunc != nil {
 		return c.poolFunc()
 	}
 
 	return nil, fmt.Errorf("not implemented")
+}
+
+// Close closes the Kafka consumer.
+func (c *Consumer) Close() error {
+	return c.kafkaConsumer.Close()
+}
+
+// CommitMessage commits the offset of the provided message.
+func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+	return c.kafkaConsumer.CommitMessage(msg)
 }

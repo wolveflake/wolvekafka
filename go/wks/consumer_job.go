@@ -19,12 +19,12 @@ package wks
 
 import (
 	"context"
-	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 )
 
-type sendEventFunc func(ctx context.Context, event []*Event) error
+type sendEventFunc func(ctx context.Context, msgs []*kafka.Message) error
 
 type ConsumerJob struct {
 	ctx       context.Context
@@ -33,59 +33,82 @@ type ConsumerJob struct {
 	// consumer name.
 	name string
 
-	// events to send to consumer for processing.
-	event []*Event
+	// kafka consumer instance.
+	consumer *Consumer
 
+	// callback function to send events.
 	sendEventFunc sendEventFunc
 
 	// logger instance.
 	log *zap.SugaredLogger
-
-	// timestamp of the job creation.
-	jobCreationStartTime time.Time
-	/// timestamp of the job execution.
-	jobExecutionStartTime time.Time
 }
 
-func defaultSendEventFunc(ctx context.Context, event []*Event) error {
+func defaultSendEventFunc(ctx context.Context, msgs []*kafka.Message) error {
 	// TODO(13): implement default event sending logic.
 	return nil
 }
 
-func newConsumerJob(ctx context.Context, event []*Event) *ConsumerJob {
-	ctxJob, ctxCancel := context.WithCancel(ctx)
+func (c *ConsumerJob) Execute() {
 
-	return &ConsumerJob{
-		ctx:           ctxJob,
-		ctxCancel:     ctxCancel,
-		event:         event,
-		sendEventFunc: defaultSendEventFunc,
-		// creation time.
-		jobCreationStartTime: time.Now(),
+	// start polling kafka messages.
+	msgChan, err := c.consumer.Poll()
+	if err != nil {
+		c.log.Errorf("[%v] error polling messages: %v", c.name, err)
+	}
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			c.log.Info("[%v] stopping consumer job", c.name)
+		case msgs, ok := <-msgChan:
+			if !ok {
+				c.log.Infof("[%v] message channel closed", c.name)
+				c.ctxCancel()
+				return
+			}
+
+			for _, msg := range msgs {
+				c.log.Infof(
+					"[%v] Consumed message from topic %s [%d] at offset %v",
+					c.name,
+					*msg.TopicPartition.Topic,
+					msg.TopicPartition.Partition,
+					msg.TopicPartition.Offset)
+			}
+
+			err = c.sendEventFunc(c.ctx, msgs)
+			c.log.Infof("[%v] Processed with status: %v", c.name, err)
+			if err != nil {
+				continue
+			}
+
+			// You can process the message here
+			// For automatic offset committing, no explicit commit is needed here with "enable.auto.commit": "true"
+			// For manual offset committing, you would use consumer.CommitMessage(e)
+			for _, msg := range msgs {
+				_, err := c.consumer.CommitMessage(msg)
+				if err != nil {
+					c.log.Errorf("[%v] error committing message offset: %v", c.name, err)
+				} else {
+					c.log.Infof("[%v] committed message offset: %v", c.name, msg.TopicPartition.Offset)
+				}
+			}
+		}
 	}
 }
 
-func (e *ConsumerJob) Execute() {
-	defer e.done()
-
-	// record execution start time to report processing time metrics.
-	e.jobExecutionStartTime = time.Now()
-
-	err := e.sendEventFunc(e.ctx, e.event)
-	eventsLogs := make([]string, 0, len(e.event))
-	for _, ev := range e.event {
-		eventsLogs = append(eventsLogs, ev.msg.String())
-	}
-	e.log.Infof("Processed events with error: %v, event: %+v", err, eventsLogs)
+func (c *ConsumerJob) Cancel() {
+	defer c.done()
 }
 
-func (e *ConsumerJob) Cancel() {
-	defer e.done()
-}
-
-func (e *ConsumerJob) done() {
-	// TODO(13): record metrics.
+func (c *ConsumerJob) done() {
+	c.log.Info("[%v] consumer job has been stopped", c.name)
 
 	// cancel job context.
-	e.ctxCancel()
+	c.ctxCancel()
+
+	err := c.consumer.Close()
+	if err != nil {
+		c.log.Errorf("[%v] error closing consumer: %v", c.name, err)
+	}
 }

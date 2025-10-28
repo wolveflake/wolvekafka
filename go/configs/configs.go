@@ -38,3 +38,7 @@ func NewConfigFromProto(proto *configs_pb.Config) (*Config, error) {
 func (c *Config) Consumers() []*configs_pb.Consumer {
 	return c.proto.GetConsumers()
 }
+
+func (c *Config) Cluster() *configs_pb.Cluster {
+	return c.proto.GetCluster()
+}

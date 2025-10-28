@@ -30,10 +30,15 @@ func TestCustomPool(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	poolFunc := func() ([]*kafka.Message, error) {
-		return []*kafka.Message{
-			&kafka.Message{},
-		}, nil
+	msgChan := make(chan []*kafka.Message, 1)
+	poolFunc := func() (chan []*kafka.Message, error) {
+		return msgChan, nil
+	}
+	msgChan <- []*kafka.Message{
+		{
+			TopicPartition: kafka.TopicPartition{Topic: &[]string{"test-topic"}[0], Partition: 0, Offset: 1},
+			Value:          []byte("test-message"),
+		},
 	}
 
 	params := ConsumerParams{
@@ -44,7 +49,14 @@ func TestCustomPool(t *testing.T) {
 	consumer := newConsumer(ctx, params)
 	assert.NotNil(t, consumer)
 
-	msgs, err := consumer.Pool()
+	msgChan, err := consumer.Poll()
 	assert.NoError(t, err)
-	assert.Equal(t, 1, len(msgs))
+
+	select {
+	case msgs := <-msgChan:
+		t.Logf("received messages: %v", msgs)
+		assert.Equal(t, 1, len(msgs))
+	case <-ctx.Done():
+		t.Fatal("timeout sending message to msgChan")
+	}
 }

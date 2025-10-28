@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//go/common/logger",
         "//go/configs",
+        "//proto/configs",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_dropbox_godropbox//executor",
         "@org_uber_go_zap//:zap",
