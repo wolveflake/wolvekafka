@@ -31,8 +31,7 @@ import (
 )
 
 const (
-	defaultNumWorkers   = 10
-	defaultQueueTimeout = time.Second * 10
+	defaultNumWorkers = 10
 )
 
 type WolveKafkaService struct {
@@ -45,7 +44,7 @@ type WolveKafkaService struct {
 	// logger.
 	log *zap.SugaredLogger
 
-	mu        sync.Mutex   // one update at a time.
+	mu        sync.Mutex   // one config update at a time.
 	consumers atomic.Value // map[string]*consumerRef
 }
 
@@ -80,10 +79,7 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 	return s, nil
 }
 
-func (w *WolveKafkaService) Serve() error {
-	return nil
-}
-
+// updateConfig updates the service configuration.
 func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -96,60 +92,71 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 		if existingConsumer, exists := currentConsumers[consumerName]; exists {
 			newConsumers[consumerName] = existingConsumer
 			delete(currentConsumers, consumerName)
+			// TODO(13): check if configuration has changed and update if necessary.
+			continue
+		}
+
+		// create new consumer.
+		workPoolParams := executor.WorkPoolExecutorParams{
+			NumWorkers: defaultNumWorkers,
+		}
+		workPool := executor.NewWorkPoolExecutor()
+		err := workPool.Configure(workPoolParams)
+		if err != nil {
+			w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
 		} else {
-			workPoolParams := executor.WorkPoolExecutorParams{
-				NumWorkers: defaultNumWorkers,
+			jobs := make([]*ConsumerJob, workPool.Size())
+			// generate consumer job and submit to work pool
+			for idx := 0; idx < workPool.Size(); idx++ {
+				jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
+				consumerParams := ConsumerParams{
+					Name:         consumerName,
+					Cluster:      config.Cluster(),
+					PoolDuration: time.Millisecond * 500,
+					Topics:       consumerCfg.GetTopics(),
+				}
+				kafkaConsumer, err := NewConsumer(jobCtx, consumerParams)
+				if err != nil {
+					w.log.Errorf("failed to create kafka consumer for %s: %s", consumerName, err)
+					continue
+				}
+				job := &ConsumerJob{
+					ctx:       jobCtx,
+					ctxCancel: jobCtxCancel,
+					// consumer name.
+					name: fmt.Sprintf("%s-%d", consumerName, idx),
+					// kafka consumer instance.
+					consumer: kafkaConsumer,
+					// callback function to send events.
+					sendEventFunc: w.params.sendEventFunc,
+					// logger instance.
+					log: w.log,
+				}
+				workPool.Process(job)
+				jobs[idx] = job
 			}
-			workPool := executor.NewWorkPoolExecutor()
-			err := workPool.Configure(workPoolParams)
-			if err != nil {
-				w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
-			} else {
-				jobs := make([]*ConsumerJob, workPool.Size())
-				// generate consumer job and submit to work pool
-				for idx := 0; idx < workPool.Size(); idx++ {
-					jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
-					consumerParams := ConsumerParams{
-						Name:         consumerName,
-						Cluster:      config.Cluster(),
-						PoolDuration: time.Millisecond * 500,
-						Topics:       consumerCfg.GetTopics(),
-					}
-					kafkaConsumer, err := NewConsumer(jobCtx, consumerParams)
-					if err != nil {
-						w.log.Errorf("failed to create kafka consumer for %s: %s", consumerName, err)
-						continue
-					}
-					job := &ConsumerJob{
-						ctx:       jobCtx,
-						ctxCancel: jobCtxCancel,
-						// consumer name.
-						name: fmt.Sprintf("%s-%d", consumerName, idx),
-						// kafka consumer instance.
-						consumer: kafkaConsumer,
-						// callback function to send events.
-						sendEventFunc: w.params.sendEventFunc,
-						// logger instance.
-						log: w.log,
-					}
-					workPool.Process(job)
-					jobs[idx] = job
-				}
-				newConsumers[consumerName] = &consumerRef{
-					jobs:     jobs,
-					executor: workPool,
-				}
+			newConsumers[consumerName] = &consumerRef{
+				jobs:     jobs,
+				executor: workPool,
 			}
 		}
 	}
 
 	// Shutdown removed consumers.
 	for consumerName, exec := range currentConsumers {
-		w.log.Infof("stopping consumer %s", consumerName)
+		w.log.Infof("stopping consumer: %s, jobs count: %v", consumerName, len(exec.jobs))
+		w.stopConsumerJobs(exec)
 		exec.executor.Configure(executor.WorkPoolExecutorParams{
 			NumWorkers: 0,
 		})
 	}
 
 	w.consumers.Store(newConsumers)
+}
+
+// stopConsumerJobs stops all jobs for a given consumer.
+func (w *WolveKafkaService) stopConsumerJobs(consumerRef *consumerRef) {
+	for _, job := range consumerRef.jobs {
+		job.ctxCancel()
+	}
 }
