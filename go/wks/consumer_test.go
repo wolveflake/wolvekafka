@@ -26,12 +26,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCustomPool(t *testing.T) {
+func TestCustomPoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	msgChan := make(chan []*kafka.Message, 1)
-	poolFunc := func() (chan []*kafka.Message, error) {
+	pollFunc := func() (chan []*kafka.Message, error) {
 		return msgChan, nil
 	}
 	msgChan <- []*kafka.Message{
@@ -43,7 +43,7 @@ func TestCustomPool(t *testing.T) {
 
 	params := ConsumerParams{
 		Name:     "test-consumer",
-		poolFunc: poolFunc,
+		pollFunc: pollFunc,
 	}
 
 	consumer := newConsumer(ctx, params)

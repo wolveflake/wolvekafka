@@ -44,12 +44,12 @@ type ConsumerJob struct {
 }
 
 func defaultSendEventFunc(ctx context.Context, msgs []*kafka.Message) error {
-	// TODO(13): implement default event sending logic.
+
 	return nil
 }
 
 func (c *ConsumerJob) Execute() {
-
+	c.log.Infof("[%v] starting consumer job", c.name)
 	// start polling kafka messages.
 	msgChan, err := c.consumer.Poll()
 	if err != nil {

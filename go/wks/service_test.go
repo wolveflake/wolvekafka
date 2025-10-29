@@ -19,15 +19,98 @@ package wks
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
+	"wolvekafka/go/configs"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBasic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-
 	assert.NotNil(t, ctx)
+
+	// start a test HTTP server to act as a lambda endpoint
+	lambdaReqChan := make(chan []*kafka.Message, 1)
+
+	jsonCfg := fmt.Sprintf(`{
+		"cluster": {
+			"bootstrap_servers": [
+				"broker1:9092"
+			]
+		},
+		"consumers": [
+			{
+				"group_id": "group1",
+				"topics": ["topic1", "topic2"],
+				"retry_policy": {
+					"max_retries": 3,
+					"initial_backoff_ms": 100,
+					"max_backoff_ms": 1000,
+					"drop": {}
+				},
+				"lambdas": [
+					{
+						"url": "http://127.0.0.1/lambda"
+					}
+				]
+			}
+		]
+	}`)
+
+	cfgProto, err := configs.ParseConfigsJson([]byte(jsonCfg))
+	assert.NoError(t, err)
+	assert.NotNil(t, cfgProto)
+	cfg, err := configs.NewConfigFromProto(cfgProto)
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg)
+
+	msgChan := make(chan []*kafka.Message, 1)
+	pollFunc := func() (chan []*kafka.Message, error) {
+		return msgChan, nil
+	}
+	wks, err := NewWolveKafkaService(ctx, WolveKafkaParams{
+		Config: cfg,
+		newConsumerFunc: func(ctx context.Context, params ConsumerParams) (*Consumer, error) {
+			return newConsumer(ctx, ConsumerParams{
+				Cluster:  cfg.Cluster(),
+				pollFunc: pollFunc,
+				commitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+					return []kafka.TopicPartition{}, nil
+				},
+			}), nil
+		},
+		sendEventFunc: func(ctx context.Context, msgs []*kafka.Message) error {
+			lambdaReqChan <- msgs
+			return nil
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, wks)
+
+	topic := "topic1"
+	// send a test message
+	testMsg := &kafka.Message{
+
+		TopicPartition: kafka.TopicPartition{
+			Topic:     &topic,
+			Partition: 0,
+			Offset:    0,
+		},
+		Value: []byte("test message"),
+	}
+	msgChan <- []*kafka.Message{testMsg}
+
+	// wait for the lambda to be invoked
+	select {
+	case msgs := <-lambdaReqChan:
+		assert.NotNil(t, msgs)
+		assert.Equal(t, 1, len(msgs))
+		assert.Equal(t, "test message", string(msgs[0].Value))
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for lambda invocation")
+	}
 }
