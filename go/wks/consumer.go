@@ -34,7 +34,8 @@ const (
 	defaultPoolDurationMs = 100
 )
 
-type poolFunc func() (chan []*kafka.Message, error)
+type pollFunc func() (chan []*kafka.Message, error)
+type commitMessageFunc func(msg *kafka.Message) ([]kafka.TopicPartition, error)
 
 type Consumer struct {
 	// consumer name.s
@@ -51,7 +52,10 @@ type Consumer struct {
 	// logger.
 	log *zap.SugaredLogger
 
-	poolFunc poolFunc
+	// polling function (mostly for testing purposes).
+	pollFunc pollFunc
+	// commit message function (mostly for testing purposes).
+	commitMessageFunc commitMessageFunc
 }
 
 type ConsumerParams struct {
@@ -68,7 +72,9 @@ type ConsumerParams struct {
 	Topics []string
 
 	// polling function (mostly for testing purposes).
-	poolFunc poolFunc
+	pollFunc pollFunc
+	// commit message function (mostly for testing purposes).
+	commitMessageFunc commitMessageFunc
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
@@ -113,18 +119,19 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	log := logger.S()
 
 	return &Consumer{
-		ctx:            ctx,
-		name:           params.Name,
-		poolDurationMs: defaultPoolDurationMs,
-		log:            log,
-		poolFunc:       params.poolFunc,
+		ctx:               ctx,
+		name:              params.Name,
+		poolDurationMs:    defaultPoolDurationMs,
+		log:               log,
+		pollFunc:          params.pollFunc,
+		commitMessageFunc: params.commitMessageFunc,
 	}
 }
 
 // Poll polls a message from Kafka.
 func (c *Consumer) Poll() (chan []*kafka.Message, error) {
-	if c.poolFunc != nil {
-		return c.poolFunc()
+	if c.pollFunc != nil {
+		return c.pollFunc()
 	}
 
 	return nil, fmt.Errorf("not implemented")
@@ -137,5 +144,8 @@ func (c *Consumer) Close() error {
 
 // CommitMessage commits the offset of the provided message.
 func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+	if c.commitMessageFunc != nil {
+		return c.commitMessageFunc(msg)
+	}
 	return c.kafkaConsumer.CommitMessage(msg)
 }

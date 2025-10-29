@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "model_proto",
+    srcs = ["kafka_msg.proto"],
+    visibility = ["//visibility:public"],
+)
+
+go_proto_library(
+    name = "model_go_proto",
+    importpath = "wolvekafka/proto/model",
+    proto = ":model_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "model",
+    embed = [":model_go_proto"],
+    importpath = "wolvekafka/proto/model",
+    visibility = ["//visibility:public"],
+)

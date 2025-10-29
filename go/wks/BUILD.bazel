@@ -28,6 +28,7 @@ go_test(
     ],
     embed = [":wks"],
     deps = [
+        "//go/configs",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_stretchr_testify//assert",
     ],

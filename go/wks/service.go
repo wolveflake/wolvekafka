@@ -46,14 +46,19 @@ type WolveKafkaService struct {
 
 	mu        sync.Mutex   // one config update at a time.
 	consumers atomic.Value // map[string]*consumerRef
+
+	sendEventFunc   sendEventFunc
+	newConsumerFunc func(ctx context.Context, params ConsumerParams) (*Consumer, error)
 }
 
 // WolveKafkaParams holds parameters for WKS service.
 type WolveKafkaParams struct {
-	config *configs.Config
+	Config *configs.Config
 
 	// event sending function (mostly for testing purposes).
 	sendEventFunc sendEventFunc
+	// function to create new consumer (mostly for testing purposes).
+	newConsumerFunc func(ctx context.Context, params ConsumerParams) (*Consumer, error)
 }
 
 type consumerRef struct {
@@ -65,16 +70,29 @@ type consumerRef struct {
 func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveKafkaService, error) {
 	srvCtx, cancelFunc := context.WithCancel(ctx)
 
-	s := &WolveKafkaService{
-		ctx:       srvCtx,
-		ctxCancel: cancelFunc,
-		log:       logger.S(),
-		params:    &params,
+	// set default functions if not provided.
+	newConsumerFunc := NewConsumer
+	if params.newConsumerFunc != nil {
+		logger.S().Infof("using new consumer callback function provided in params...")
+		newConsumerFunc = params.newConsumerFunc
 	}
-	s.consumers.Store(make(map[string]*executor.WorkPoolExecutor))
+	sendEventFunc := defaultSendEventFunc
+	if params.sendEventFunc != nil {
+		logger.S().Infof("using send event callback function provided in params...")
+		sendEventFunc = params.sendEventFunc
+	}
+	s := &WolveKafkaService{
+		ctx:             srvCtx,
+		ctxCancel:       cancelFunc,
+		log:             logger.S(),
+		params:          &params,
+		newConsumerFunc: newConsumerFunc,
+		sendEventFunc:   sendEventFunc,
+	}
+	s.consumers.Store(make(map[string]*consumerRef))
 
 	// initial configuration.
-	s.updateConfig(params.config)
+	s.updateConfig(params.Config)
 
 	return s, nil
 }
@@ -97,6 +115,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 		}
 
 		// create new consumer.
+		w.log.Infof("creating new consumer: %s", consumerName)
 		workPoolParams := executor.WorkPoolExecutorParams{
 			NumWorkers: defaultNumWorkers,
 		}
@@ -105,9 +124,11 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 		if err != nil {
 			w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
 		} else {
-			jobs := make([]*ConsumerJob, workPool.Size())
+			jobs := make([]*ConsumerJob, workPoolParams.NumWorkers)
 			// generate consumer job and submit to work pool
-			for idx := 0; idx < workPool.Size(); idx++ {
+			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
+			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
+				w.log.Infof("creating new consumer job: %s, idx: %d", consumerName, idx)
 				jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
 				consumerParams := ConsumerParams{
 					Name:         consumerName,
@@ -115,7 +136,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					PoolDuration: time.Millisecond * 500,
 					Topics:       consumerCfg.GetTopics(),
 				}
-				kafkaConsumer, err := NewConsumer(jobCtx, consumerParams)
+				kafkaConsumer, err := w.newConsumerFunc(jobCtx, consumerParams)
 				if err != nil {
 					w.log.Errorf("failed to create kafka consumer for %s: %s", consumerName, err)
 					continue
@@ -128,7 +149,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					// kafka consumer instance.
 					consumer: kafkaConsumer,
 					// callback function to send events.
-					sendEventFunc: w.params.sendEventFunc,
+					sendEventFunc: w.sendEventFunc,
 					// logger instance.
 					log: w.log,
 				}

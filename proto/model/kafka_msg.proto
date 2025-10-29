@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package model;
+option go_package = "wolvekafka/proto/model";
+
+// kafka message header.
+message Header {
+  // Header name (utf-8 string)
+  string key = 1;
+
+  // Header value (nil, empty, or binary)
+  bytes value =2; // Header value (nil, empty, or binary)
+}
+
+// kafka message structure for lambda processing.
+message KafkaMessage {
+  // Topic name.
+  string topic = 1;
+
+  // Partition number.
+  int32 partition = 2;
+
+  // Message offset.
+  int64 offset = 3;
+
+  // Message headers.
+  repeated Header headers = 4;
+
+  bytes key = 5;
+
+  bytes value = 6;
+}
