@@ -3,6 +3,13 @@ syntax = "proto3";
 package model;
 option go_package = "wolvekafka/proto/model";
 
+enum MessageEncoding {
+  // Default encoding (no specific encoding)
+  ENCODING_DEFAULT = 0;
+  // JSON encoding
+  ENCODING_JSON = 1;
+}
+
 // kafka message header.
 message Header {
   // Header name (utf-8 string)
@@ -27,6 +34,31 @@ message KafkaMessage {
   repeated Header headers = 4;
 
   bytes key = 5;
-
   bytes value = 6;
+
+  // Encoding of the message value.
+  MessageEncoding encoding = 7;
 }
+
+message LambdaRequest {
+  repeated KafkaMessage messages = 1;
+}
+
+enum ResponsStatus {
+  // Processing failed, retry processing.
+  STATUS_RETRY = 0;
+  // Processing failed, do not retry.
+  STATUS_FAILED = 1;
+  // Processing succeeded.
+  STATUS_SUCCESS = 2;
+}
+
+// lambda processing response structure.
+message LambdaResponse {
+  ResponsStatus status = 1;
+
+  // Optional message as a response from lambda.
+  bytes message = 2;
+  MessageEncoding encoding = 3;
+}
+
