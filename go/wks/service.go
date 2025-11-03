@@ -128,7 +128,6 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 			// generate consumer job and submit to work pool
 			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
 			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
-				w.log.Infof("creating new consumer job: %s, idx: %d", consumerName, idx)
 				jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
 				consumerParams := ConsumerParams{
 					Name:         consumerName,
