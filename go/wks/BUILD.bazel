@@ -7,6 +7,7 @@ go_library(
         "consumer_job.go",
         "event.go",
         "service.go",
+        "types.go",
     ],
     importpath = "wolvekafka/go/wks",
     visibility = ["//visibility:public"],
@@ -14,6 +15,7 @@ go_library(
         "//go/common/logger",
         "//go/configs",
         "//proto/configs",
+        "//proto/model",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_dropbox_godropbox//executor",
         "@org_uber_go_zap//:zap",
@@ -29,6 +31,7 @@ go_test(
     embed = [":wks"],
     deps = [
         "//go/configs",
+        "//proto/model",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_stretchr_testify//assert",
     ],

@@ -18,23 +18,33 @@
 package wks
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
+	"wolvekafka/go/configs"
 	configs_pb "wolvekafka/proto/configs"
 )
 
 var (
 	// interval to recreate consumer in case of failure.
 	consumerRecreationInterval = 10 * time.Second
+	// default lambda weight.
+	defaultLambdaWeight = uint32(100)
 )
 
-type sendEventFunc func(ctx context.Context, msgs []*kafka.Message) error
+type sendEventFunc func(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error
+
+type consumerConfigCtxKey struct{}
 
 type ConsumerJob struct {
 	ctx       context.Context
@@ -60,11 +70,68 @@ type ConsumerJob struct {
 	// configuration part.
 	consumerCfg *configs_pb.Consumer
 	clusterCfg  *configs_pb.Cluster
+
+	// total weight of all lambdas.
+	lambasWeight int
 }
 
-func defaultSendEventFunc(ctx context.Context, msgs []*kafka.Message) error {
+func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
 
+	lambda := c.pickLambda()
+	lambdaReq := kafkaMsgsToLambdaRequest(msgs)
+
+	// convert lambda request to JSON payload.
+	payload, err := configs.ConvertLambdaRequestToJson(lambdaReq)
+	if err != nil {
+		return fmt.Errorf("failed to marshal lambda request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, lambda.GetUrl(), bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("failed to create http request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send lambda request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if readErr != nil {
+			return fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
+}
+
+// pickLambda picks a lambda target from the consumer configuration.
+func (c *ConsumerJob) pickLambda() *configs_pb.Lambda {
+	lambdas := c.consumerCfg.GetLambdas()
+
+	// pick lambda based on weight.
+	randWeight := time.Now().UnixNano() % int64(c.lambasWeight)
+	currentWeight := int64(0)
+	for _, lambda := range lambdas {
+		weight := lambda.GetWeight()
+		if weight <= 0 {
+			weight = defaultLambdaWeight
+		}
+		currentWeight += int64(weight)
+		if randWeight < currentWeight {
+			return lambda
+		}
+	}
+	// fallback to the first lambda, but it should not be the case.
+	return lambdas[0]
 }
 
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
@@ -87,9 +154,30 @@ func (c *ConsumerJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consu
 }
 
 func (c *ConsumerJob) Execute() {
+	c.log.Infof("[%v:%v] starting consumer job...", c.consumerName, c.jobId)
+
 	defer c.done()
 
-	c.log.Infof("[%v:%v] starting consumer job...", c.consumerName, c.jobId)
+	// initialize lambas weight
+	for _, lambda := range c.consumerCfg.GetLambdas() {
+		weight := lambda.GetWeight()
+		if weight <= 0 {
+			weight = defaultLambdaWeight
+		}
+		c.lambasWeight += int(weight)
+	}
+	// // sort c.consumerCfg by weight.
+	lambdas := c.consumerCfg.GetLambdas()
+	sort.SliceStable(lambdas, func(i, j int) bool {
+		return lambdas[i].GetWeight() > lambdas[j].GetWeight()
+	})
+
+	c.log.Infof("[%v:%v] Total lambda weigts: %v, lambdas: %v", c.consumerName, c.jobId, c.lambasWeight, lambdas)
+
+	// use the default send event function if not provided.
+	if c.sendEventFunc == nil {
+		c.sendEventFunc = defaultSendEventFunc
+	}
 
 	// start polling kafka messages.
 	consumerParams := ConsumerParams{
@@ -110,10 +198,13 @@ func (c *ConsumerJob) Execute() {
 		c.log.Errorf("[%v:%v] error polling messages: %v", c.consumerName, c.jobId, err)
 	}
 
+	sendCtx := context.WithValue(c.ctx, consumerConfigCtxKey{}, c.consumerCfg)
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			c.log.Infof("[%v:%v] stopping consumer job", c.consumerName, c.jobId)
+			return
 		case msgs, ok := <-msgChan:
 			if !ok {
 				c.log.Infof("[%v:%v] message channel closed", c.consumerName, c.jobId)
@@ -131,7 +222,7 @@ func (c *ConsumerJob) Execute() {
 					msg.TopicPartition.Offset)
 			}
 
-			err = c.sendEventFunc(c.ctx, msgs)
+			err = c.sendEventFunc(c, sendCtx, msgs)
 			c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
 			if err != nil {
 				continue
