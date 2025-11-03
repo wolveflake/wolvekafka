@@ -4,7 +4,6 @@ go_library(
     name = "configs",
     srcs = [
         "configs.go",
-        "convertors.go",
         "parser.go",
         "validate.go",
     ],
@@ -13,8 +12,6 @@ go_library(
     deps = [
         "//go/common/logger",
         "//proto/configs",
-        "//proto/model",
-        "@org_golang_google_protobuf//encoding/protojson",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -22,13 +19,9 @@ go_library(
 go_test(
     name = "configs_test",
     srcs = [
-        "convertors_test.go",
         "parser_test.go",
         "validate_test.go",
     ],
     embed = [":configs"],
-    deps = [
-        "//proto/model",
-        "@com_github_stretchr_testify//assert",
-    ],
+    deps = ["@com_github_stretchr_testify//assert"],
 )

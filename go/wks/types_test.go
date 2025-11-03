@@ -1,6 +1,6 @@
 ///
 /// wolveflake LLC ("COMPANY") CONFIDENTIAL
-/// Unpublished Copyright (c) 2023-2025 [wolveflake LLC], All Rights Reserved.
+/// Unpublished Copyright (c) 2023-2024 [wolveflake LLC], All Rights Reserved.
 ///
 /// NOTICE:  All information contained herein is, and remains the property of COMPANY. The intellectual and technical concepts contained
 /// herein are proprietary to COMPANY and may be covered by U.S. and Foreign Patents, patents in process, and are protected by trade secret or copyright law.
@@ -15,7 +15,7 @@
 /// TO REPRODUCE, DISCLOSE OR DISTRIBUTE ITS CONTENTS, OR TO MANUFACTURE, USE, OR SELL ANYTHING THAT IT  MAY DESCRIBE, IN WHOLE OR IN PART.
 ///
 
-package configs
+package wks
 
 import (
 	"testing"
@@ -24,29 +24,6 @@ import (
 
 	model_pb "wolvekafka/proto/model"
 )
-
-/*
-// kafka message structure for lambda processing.
-message KafkaMessage {
-  // Topic name.
-  string topic = 1;
-
-  // Partition number.
-  int32 partition = 2;
-
-  // Message offset.
-  int64 offset = 3;
-
-  // Message headers.
-  repeated Header headers = 4;
-
-  bytes key = 5;
-  bytes value = 6;
-
-  // Encoding of the message value.
-  MessageEncoding encoding = 7;
-}
-*/
 
 func TestSimpleConversion(t *testing.T) {
 	req := &model_pb.LambdaRequest{
