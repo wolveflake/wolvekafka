@@ -139,6 +139,10 @@ func (c *Consumer) Poll() (chan []*kafka.Message, error) {
 
 // Close closes the Kafka consumer.
 func (c *Consumer) Close() error {
+	// no instance in tests.
+	if c.kafkaConsumer == nil {
+		return nil
+	}
 	return c.kafkaConsumer.Close()
 }
 
