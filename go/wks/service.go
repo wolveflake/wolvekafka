@@ -19,10 +19,8 @@ package wks
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 	"wolvekafka/go/common/logger"
 	"wolvekafka/go/configs"
 
@@ -129,28 +127,21 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
 			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
 				jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
-				consumerParams := ConsumerParams{
-					Name:         consumerName,
-					Cluster:      config.Cluster(),
-					PoolDuration: time.Millisecond * 500,
-					Topics:       consumerCfg.GetTopics(),
-				}
-				kafkaConsumer, err := w.newConsumerFunc(jobCtx, consumerParams)
-				if err != nil {
-					w.log.Errorf("failed to create kafka consumer for %s: %s", consumerName, err)
-					continue
-				}
 				job := &ConsumerJob{
 					ctx:       jobCtx,
 					ctxCancel: jobCtxCancel,
 					// consumer name.
-					name: fmt.Sprintf("%s-%d", consumerName, idx),
-					// kafka consumer instance.
-					consumer: kafkaConsumer,
+					consumerName: consumerCfg.GetGroupId(),
+					// mostly for logging.
+					jobId: idx,
 					// callback function to send events.
 					sendEventFunc: w.sendEventFunc,
 					// logger instance.
-					log: w.log,
+					log:         w.log,
+					consumerCfg: consumerCfg,
+					clusterCfg:  config.Cluster(),
+
+					newConsumerFunc: w.newConsumerFunc,
 				}
 				workPool.Process(job)
 				jobs[idx] = job
