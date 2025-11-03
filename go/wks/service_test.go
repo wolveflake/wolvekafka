@@ -139,7 +139,7 @@ func TestHttpLambda(t *testing.T) {
 			return
 		}
 		defer r.Body.Close()
-		lambdaReq, err := configs.ParseLambdaRequestJson(body)
+		lambdaReq, err := ParseLambdaRequestJson(body)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("failed to parse lambda request: %v", err), http.StatusBadRequest)
 			return

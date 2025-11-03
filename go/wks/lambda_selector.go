@@ -1,6 +1,6 @@
 ///
 /// wolveflake LLC ("COMPANY") CONFIDENTIAL
-/// Unpublished Copyright (c) 2023-2025 [wolveflake LLC], All Rights Reserved.
+/// Unpublished Copyright (c) 2023-2024 [wolveflake LLC], All Rights Reserved.
 ///
 /// NOTICE:  All information contained herein is, and remains the property of COMPANY. The intellectual and technical concepts contained
 /// herein are proprietary to COMPANY and may be covered by U.S. and Foreign Patents, patents in process, and are protected by trade secret or copyright law.
@@ -15,33 +15,62 @@
 /// TO REPRODUCE, DISCLOSE OR DISTRIBUTE ITS CONTENTS, OR TO MANUFACTURE, USE, OR SELL ANYTHING THAT IT  MAY DESCRIBE, IN WHOLE OR IN PART.
 ///
 
-package configs
+package wks
 
 import (
-	"google.golang.org/protobuf/encoding/protojson"
-	model_pb "wolvekafka/proto/model"
+	"sort"
+	"time"
+
+	configs_pb "wolvekafka/proto/configs"
 )
 
 var (
-	// Configure protojson to match the legacy jsonpb behaviour we relied on.
-	marshaler = protojson.MarshalOptions{
-		EmitUnpopulated: true,
-		UseEnumNumbers:  true,
-	}
-	// Allow round-tripping JSON back into the proto message.
-	unmarshaler = protojson.UnmarshalOptions{}
+	// default lambda weight.
+	defaultLambdaWeight = uint32(100)
 )
 
-// ConvertLambdaRequestToJson converts a LambdaRequest protobuf message to its JSON representation.
-func ConvertLambdaRequestToJson(lambdaReq *model_pb.LambdaRequest) ([]byte, error) {
-	return marshaler.Marshal(lambdaReq)
+type LambdaSelector struct {
+	totalWeight int64
+
+	lambdas []*configs_pb.Lambda
 }
 
-// ParseLambdaRequestJson parses a JSON representation of a LambdaRequest into its protobuf message.
-func ParseLambdaRequestJson(payload []byte) (*model_pb.LambdaRequest, error) {
-	result := &model_pb.LambdaRequest{}
-	if err := unmarshaler.Unmarshal(payload, result); err != nil {
-		return nil, err
+func NewLambdaSelector(lambdas []*configs_pb.Lambda) *LambdaSelector {
+	// total lambas weight
+	totalWeight := int64(0)
+	for _, lambda := range lambdas {
+		weight := lambda.GetWeight()
+		if weight <= 0 {
+			weight = defaultLambdaWeight
+		}
+		totalWeight += int64(weight)
 	}
-	return result, nil
+
+	// sort c.consumerCfg by weight.
+	sort.SliceStable(lambdas, func(i, j int) bool {
+		return lambdas[i].GetWeight() > lambdas[j].GetWeight()
+	})
+
+	return &LambdaSelector{
+		totalWeight: totalWeight,
+		lambdas:     lambdas,
+	}
+}
+
+// pick lambda based on weight.
+func (l *LambdaSelector) Select() *configs_pb.Lambda {
+	randWeight := time.Now().UnixNano() % int64(l.totalWeight)
+	currentWeight := int64(0)
+	for _, lambda := range l.lambdas {
+		weight := lambda.GetWeight()
+		if weight <= 0 {
+			weight = defaultLambdaWeight
+		}
+		currentWeight += int64(weight)
+		if randWeight < currentWeight {
+			return lambda
+		}
+	}
+	// fallback to the first lambda, but it should not be the case.
+	return l.lambdas[0]
 }

@@ -19,8 +19,19 @@ package wks
 
 import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	model_pb "wolvekafka/proto/model"
+)
+
+var (
+	// Configure protojson to match the legacy jsonpb behaviour we relied on.
+	marshaler = protojson.MarshalOptions{
+		EmitUnpopulated: true,
+		UseEnumNumbers:  true,
+	}
+	// Allow round-tripping JSON back into the proto message.
+	unmarshaler = protojson.UnmarshalOptions{}
 )
 
 // kafkaMsgToProto converts a single Kafka message to its protobuf representation.
@@ -59,4 +70,18 @@ func kafkaMsgsToLambdaRequest(msgs []*kafka.Message) *model_pb.LambdaRequest {
 	}
 
 	return lambdaReq
+}
+
+// ConvertLambdaRequestToJson converts a LambdaRequest protobuf message to its JSON representation.
+func ConvertLambdaRequestToJson(lambdaReq *model_pb.LambdaRequest) ([]byte, error) {
+	return marshaler.Marshal(lambdaReq)
+}
+
+// ParseLambdaRequestJson parses a JSON representation of a LambdaRequest into its protobuf message.
+func ParseLambdaRequestJson(payload []byte) (*model_pb.LambdaRequest, error) {
+	result := &model_pb.LambdaRequest{}
+	if err := unmarshaler.Unmarshal(payload, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }

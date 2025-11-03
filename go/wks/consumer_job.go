@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -31,15 +30,12 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
-	"wolvekafka/go/configs"
 	configs_pb "wolvekafka/proto/configs"
 )
 
 var (
 	// interval to recreate consumer in case of failure.
 	consumerRecreationInterval = 10 * time.Second
-	// default lambda weight.
-	defaultLambdaWeight = uint32(100)
 )
 
 type sendEventFunc func(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error
@@ -71,8 +67,7 @@ type ConsumerJob struct {
 	consumerCfg *configs_pb.Consumer
 	clusterCfg  *configs_pb.Cluster
 
-	// total weight of all lambdas.
-	lambasWeight int
+	lambdaSelector *LambdaSelector
 }
 
 func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error {
@@ -80,11 +75,11 @@ func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Mes
 		return nil
 	}
 
-	lambda := c.pickLambda()
+	lambda := c.lambdaSelector.Select()
 	lambdaReq := kafkaMsgsToLambdaRequest(msgs)
 
 	// convert lambda request to JSON payload.
-	payload, err := configs.ConvertLambdaRequestToJson(lambdaReq)
+	payload, err := ConvertLambdaRequestToJson(lambdaReq)
 	if err != nil {
 		return fmt.Errorf("failed to marshal lambda request: %w", err)
 	}
@@ -113,27 +108,6 @@ func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Mes
 	return nil
 }
 
-// pickLambda picks a lambda target from the consumer configuration.
-func (c *ConsumerJob) pickLambda() *configs_pb.Lambda {
-	lambdas := c.consumerCfg.GetLambdas()
-
-	// pick lambda based on weight.
-	randWeight := time.Now().UnixNano() % int64(c.lambasWeight)
-	currentWeight := int64(0)
-	for _, lambda := range lambdas {
-		weight := lambda.GetWeight()
-		if weight <= 0 {
-			weight = defaultLambdaWeight
-		}
-		currentWeight += int64(weight)
-		if randWeight < currentWeight {
-			return lambda
-		}
-	}
-	// fallback to the first lambda, but it should not be the case.
-	return lambdas[0]
-}
-
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
 func (c *ConsumerJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consumer, error) {
 	for {
@@ -158,21 +132,8 @@ func (c *ConsumerJob) Execute() {
 
 	defer c.done()
 
-	// initialize lambas weight
-	for _, lambda := range c.consumerCfg.GetLambdas() {
-		weight := lambda.GetWeight()
-		if weight <= 0 {
-			weight = defaultLambdaWeight
-		}
-		c.lambasWeight += int(weight)
-	}
-	// // sort c.consumerCfg by weight.
-	lambdas := c.consumerCfg.GetLambdas()
-	sort.SliceStable(lambdas, func(i, j int) bool {
-		return lambdas[i].GetWeight() > lambdas[j].GetWeight()
-	})
-
-	c.log.Infof("[%v:%v] Total lambda weigts: %v, lambdas: %v", c.consumerName, c.jobId, c.lambasWeight, lambdas)
+	c.lambdaSelector = NewLambdaSelector(c.consumerCfg.GetLambdas())
+	c.log.Infof("[%v:%v] Total lambda weigts: %v, lambdas: %v", c.consumerName, c.jobId, c.lambdaSelector.totalWeight, c.lambdaSelector.lambdas)
 
 	// use the default send event function if not provided.
 	if c.sendEventFunc == nil {
