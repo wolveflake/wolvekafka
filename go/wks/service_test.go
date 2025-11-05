@@ -51,12 +51,6 @@ func TestBasic(t *testing.T) {
 			{
 				"group_id": "group1",
 				"topics": ["topic1", "topic2"],
-				"retry_policy": {
-					"max_retries": 3,
-					"initial_backoff_ms": 100,
-					"max_backoff_ms": 1000,
-					"drop": {}
-				},
 				"lambdas": [
 					{
 						"url": "http://127.0.0.1/lambda"
@@ -158,12 +152,6 @@ func TestHttpLambda(t *testing.T) {
 			{
 				"group_id": "group1",
 				"topics": ["topic1", "topic2"],
-				"retry_policy": {
-					"max_retries": 3,
-					"initial_backoff_ms": 100,
-					"max_backoff_ms": 1000,
-					"drop": {}
-				},
 				"lambdas": [
 					{
 						"url": "%s"
