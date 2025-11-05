@@ -38,11 +38,11 @@ var (
 	consumerRecreationInterval = 10 * time.Second
 )
 
-type sendEventFunc func(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error
+type sendEventFunc func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error
 
 type consumerConfigCtxKey struct{}
 
-type ConsumerJob struct {
+type ProcessingJob struct {
 	ctx       context.Context
 	ctxCancel context.CancelFunc
 
@@ -70,7 +70,7 @@ type ConsumerJob struct {
 	lambdaSelector *LambdaSelector
 }
 
-func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error {
+func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error {
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -109,7 +109,7 @@ func defaultSendEventFunc(c *ConsumerJob, ctx context.Context, msgs []*kafka.Mes
 }
 
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
-func (c *ConsumerJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consumer, error) {
+func (c *ProcessingJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consumer, error) {
 	for {
 		kafkaConsumer, err := c.newConsumerFunc(c.ctx, consumerParams)
 		if err != nil {
@@ -127,7 +127,7 @@ func (c *ConsumerJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consu
 	}
 }
 
-func (c *ConsumerJob) Execute() {
+func (c *ProcessingJob) Execute() {
 	c.log.Infof("[%v:%v] starting consumer job...", c.consumerName, c.jobId)
 
 	defer c.done()
@@ -204,11 +204,11 @@ func (c *ConsumerJob) Execute() {
 	}
 }
 
-func (c *ConsumerJob) Cancel() {
+func (c *ProcessingJob) Cancel() {
 	defer c.done()
 }
 
-func (c *ConsumerJob) done() {
+func (c *ProcessingJob) done() {
 	c.log.Infof("[%v:%v] consumer job has been stopped", c.consumerName, c.jobId)
 
 	// cancel job context.

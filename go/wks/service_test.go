@@ -88,7 +88,7 @@ func TestBasic(t *testing.T) {
 				},
 			}), nil
 		},
-		sendEventFunc: func(c *ConsumerJob, ctx context.Context, msgs []*kafka.Message) error {
+		sendEventFunc: func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error {
 			lambdaReqChan <- msgs
 			return nil
 		},
