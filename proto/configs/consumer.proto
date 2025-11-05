@@ -37,6 +37,7 @@ message RetryPolicy {
       ExponentialBackoff exponential_backoff = 1;
     }
 
+    // action policy after retries are exhausted.
     oneof action {
       // Immediately drop the message after retries are exhausted.
       DropAction drop = 4;
