@@ -74,15 +74,14 @@ message Consumer {
     // List of topics the consumer subscribes to.
     repeated string topics = 2;
 
-    // Retry policy for message consumption.
-    RetryPolicy retry_policy = 3;
-
     // List of lambdas associated with the consumer.
-    repeated Lambda lambdas = 4;
+    repeated Lambda lambdas = 3;
+
+    RetryPolicy retry_policy = 4;
 
     // Type of consumer.
     oneof ConsumerType {
-      BatchConsumer batch = 5;
-      ParallelConsumer parallel= 6;
+      BatchConsumer batch = 10;
+      ParallelConsumer parallel= 11;
     }
 }
