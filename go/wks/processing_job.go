@@ -38,6 +38,13 @@ var (
 	consumerRecreationInterval = 10 * time.Second
 )
 
+const (
+	defaultRetryInitialBackoff = 100 * time.Millisecond
+	defaultRetryMaxBackoff     = 5 * time.Second
+	defaultRetryMultiplier     = 2.0
+	maxRetryAttemptsCap        = 32
+)
+
 type sendEventFunc func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error
 
 type consumerConfigCtxKey struct{}
@@ -84,28 +91,145 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, msgs []*kafka.M
 		return fmt.Errorf("failed to marshal lambda request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, lambda.GetUrl(), bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("failed to create http request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send lambda request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		if readErr != nil {
-			return fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, readErr)
+	sendOnce := func(ctx context.Context) error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, lambda.GetUrl(), bytes.NewReader(payload))
+		if err != nil {
+			return fmt.Errorf("failed to create http request: %w", err)
 		}
-		return fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return fmt.Errorf("failed to send lambda request: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			if readErr != nil {
+				return fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, readErr)
+			}
+			return fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return nil
 	}
 
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return nil
+	return c.executeWithRetry(ctx, sendOnce)
+}
+
+// executeWithRetry runs the provided function until it succeeds or retry policy rules are exhausted.
+func (c *ProcessingJob) executeWithRetry(ctx context.Context, fn func(context.Context) error) error {
+	lastErr := fn(ctx)
+	if lastErr == nil {
+		return nil
+	}
+
+	retryPolicy := c.consumerCfg.GetRetryPolicy()
+	if retryPolicy == nil {
+		return lastErr
+	}
+
+	var backoffDurations []time.Duration
+	if exponential := retryPolicy.GetExponentialBackoff(); exponential != nil {
+		backoffDurations = buildBackoffSchedule(exponential)
+	}
+
+	if len(backoffDurations) == 0 {
+		return lastErr
+	}
+
+	totalAttempts := 1 + len(backoffDurations)
+	c.log.Warnf("[%v:%v] send attempt 1/%d failed: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+
+	for idx, backoff := range backoffDurations {
+		if err := sleepWithContext(ctx, backoff); err != nil {
+			return err
+		}
+
+		attempt := idx + 2
+		if backoff > 0 {
+			c.log.Warnf("[%v:%v] retrying message batch attempt %d/%d after %v", c.consumerName, c.jobId, attempt, totalAttempts, backoff)
+		} else {
+			c.log.Warnf("[%v:%v] retrying message batch attempt %d/%d", c.consumerName, c.jobId, attempt, totalAttempts)
+		}
+
+		lastErr = fn(ctx)
+		if lastErr == nil {
+			return nil
+		}
+	}
+
+	if retryPolicy.GetDrop() != nil {
+		c.log.Warnf("[%v:%v] dropping message batch after %d attempts due to: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+		return nil
+	}
+
+	c.log.Errorf("[%v:%v] exhausted %d attempts sending message batch: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+	return lastErr
+}
+
+// buildBackoffSchedule transforms the proto configuration into a bounded sequence of backoff durations.
+func buildBackoffSchedule(exp *configs_pb.ExponentialBackoff) []time.Duration {
+	if exp == nil {
+		return nil
+	}
+
+	initial := time.Duration(exp.GetInitialBackoffMs()) * time.Millisecond
+	if initial <= 0 {
+		initial = defaultRetryInitialBackoff
+	}
+
+	maxBackoff := time.Duration(exp.GetMaxBackoffMs()) * time.Millisecond
+	if maxBackoff <= 0 {
+		maxBackoff = defaultRetryMaxBackoff
+	}
+	if initial > maxBackoff {
+		maxBackoff = initial
+	}
+
+	multiplier := exp.GetMultiplier()
+	if multiplier <= 1 {
+		multiplier = defaultRetryMultiplier
+	}
+
+	durations := make([]time.Duration, 0, 8)
+	current := initial
+	for len(durations) < maxRetryAttemptsCap {
+		durations = append(durations, current)
+		if current >= maxBackoff {
+			break
+		}
+
+		next := time.Duration(float64(current) * multiplier)
+		if next <= current {
+			next = current
+		}
+		if next > maxBackoff {
+			next = maxBackoff
+		}
+		current = next
+	}
+
+	return durations
+}
+
+// sleepWithContext waits for the requested duration or returns early if the context is canceled.
+func sleepWithContext(ctx context.Context, duration time.Duration) error {
+	if duration <= 0 {
+		return nil
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
