@@ -60,7 +60,7 @@ type WolveKafkaParams struct {
 }
 
 type consumerRef struct {
-	jobs     []*ConsumerJob
+	jobs     []*ProcessingJob
 	executor *executor.WorkPoolExecutor
 }
 
@@ -122,12 +122,12 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 		if err != nil {
 			w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
 		} else {
-			jobs := make([]*ConsumerJob, workPoolParams.NumWorkers)
+			jobs := make([]*ProcessingJob, workPoolParams.NumWorkers)
 			// generate consumer job and submit to work pool
 			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
 			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
 				jobCtx, jobCtxCancel := context.WithCancel(w.ctx)
-				job := &ConsumerJob{
+				job := &ProcessingJob{
 					ctx:       jobCtx,
 					ctxCancel: jobCtxCancel,
 					// consumer name.
@@ -156,7 +156,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	// Shutdown removed consumers.
 	for consumerName, exec := range currentConsumers {
 		w.log.Infof("stopping consumer: %s, jobs count: %v", consumerName, len(exec.jobs))
-		w.stopConsumerJobs(exec)
+		w.stopProcessingJobs(exec)
 		exec.executor.Configure(executor.WorkPoolExecutorParams{
 			NumWorkers: 0,
 		})
@@ -165,8 +165,8 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	w.consumers.Store(newConsumers)
 }
 
-// stopConsumerJobs stops all jobs for a given consumer.
-func (w *WolveKafkaService) stopConsumerJobs(consumerRef *consumerRef) {
+// stopProcessingJobs stops all jobs for a given consumer.
+func (w *WolveKafkaService) stopProcessingJobs(consumerRef *consumerRef) {
 	for _, job := range consumerRef.jobs {
 		job.ctxCancel()
 	}

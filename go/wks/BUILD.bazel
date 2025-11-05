@@ -4,9 +4,9 @@ go_library(
     name = "wks",
     srcs = [
         "consumer.go",
-        "consumer_job.go",
         "event.go",
         "lambda_selector.go",
+        "processing_job.go",
         "service.go",
         "types.go",
     ],
