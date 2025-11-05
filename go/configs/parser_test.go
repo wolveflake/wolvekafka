@@ -37,12 +37,6 @@ func TestParserSimpleConfig(t *testing.T) {
 			{
 				"group_id": "group1",
 				"topics": ["topic1", "topic2"],
-				"retry_policy": {
-					"max_retries": 3,
-					"initial_backoff_ms": 100,
-					"max_backoff_ms": 1000,
-					"drop": {}
-				},
 				"lambdas": [
 					{
 						"url": "https://lambda1.example.com",
@@ -57,10 +51,6 @@ func TestParserSimpleConfig(t *testing.T) {
 			{
 				"group_id": "group1",
 				"topics": ["topic1", "topic3"],
-				"retry_policy": {
-					"max_retries": 3,
-					"drop": {}
-				},
 				"lambdas": [
 					{
 						"url": "https://lambda1.example.com"

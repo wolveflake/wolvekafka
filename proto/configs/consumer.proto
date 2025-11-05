@@ -19,15 +19,23 @@ message DLQAction {
     uint32 max_attempts = 3;
 }
 
+message ExponentialBackoff {
+    // Initial backoff duration in milliseconds.
+    int32 initial_backoff_ms = 1;
+
+    // Maximum backoff duration in milliseconds.
+    int32 max_backoff_ms = 2;
+
+    // Backoff multiplier.
+    double multiplier = 3;
+}
 
 // Retry policy for message consumption.
 message RetryPolicy {
-    // Maximum number of retries before giving up.
-    int32 max_retries = 1;
-    // Initial backoff duration in milliseconds.
-    int32 initial_backoff_ms = 2;
-    // Maximum backoff duration in milliseconds.
-    int32 max_backoff_ms = 3;
+    oneof retry_policy {
+      // Exponential backoff strategy.
+      ExponentialBackoff exponential_backoff = 1;
+    }
 
     oneof action {
       // Immediately drop the message after retries are exhausted.
