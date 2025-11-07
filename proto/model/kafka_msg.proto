@@ -44,7 +44,7 @@ message LambdaRequest {
   repeated KafkaMessage messages = 1;
 }
 
-enum ResponsStatus {
+enum ResponseStatus {
   // Processing failed, retry processing.
   STATUS_RETRY = 0;
   // Processing failed, do not retry.
@@ -55,7 +55,7 @@ enum ResponsStatus {
 
 // lambda processing response structure.
 message LambdaResponse {
-  ResponsStatus status = 1;
+  ResponseStatus status = 1;
 
   // Optional message as a response from lambda.
   bytes message = 2;
