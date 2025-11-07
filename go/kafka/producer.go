@@ -79,7 +79,6 @@ func NewProducer(ctx context.Context, params ProducerParams) (*Producer, error) 
 		producer.log.Errorf("Failed to create %v producer: %v", params.Name, err)
 		return nil, err
 	}
-
 	producer.kafkaProducer = kafkaProducer
 
 	//
@@ -109,12 +108,38 @@ func newProducer(ctx context.Context, params ProducerParams) *Producer {
 }
 
 // Produce sends a message to Kafka.
-func (c *Producer) Produce(msg *kafka.Message) error {
+func (c *Producer) Produce(ctx context.Context, msg *kafka.Message) error {
 	if c.ProducerFunc != nil {
 		return c.ProducerFunc(msg)
 	}
 
-	return fmt.Errorf("not implemented")
+	if c.kafkaProducer == nil {
+		return fmt.Errorf("kafka producer is not initialized")
+	}
+
+	if msg == nil {
+		return fmt.Errorf("message is required")
+	}
+
+	deliveryChan := make(chan kafka.Event, 1)
+	defer close(deliveryChan)
+
+	if err := c.kafkaProducer.Produce(msg, deliveryChan); err != nil {
+		return err
+	}
+
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	case <-ctx.Done():
+		return ctx.Err()
+	case e := <-deliveryChan:
+		m, ok := e.(*kafka.Message)
+		if !ok {
+			return fmt.Errorf("unexpected delivery event type %T", e)
+		}
+		return m.TopicPartition.Error
+	}
 }
 
 // Close closes the Kafka producer.
