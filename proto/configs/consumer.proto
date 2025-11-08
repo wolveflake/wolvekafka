@@ -1,50 +1,50 @@
 syntax = "proto3";
 
 package configs;
+
 option go_package = "wolvekafka/proto/configs";
 
 import "proto/configs/cluster.proto";
 
-message DropAction {
-}
+message DropAction {}
 
 message DLQAction {
-    // Kafka cluster for the DLQ.
-    Cluster cluster = 1;
+  // Kafka cluster for the DLQ.
+  Cluster cluster = 1;
 
-    // Topic for the DLQ.
-    string topic = 2;
+  // Topic for the DLQ.
+  string topic = 2;
 
-    // Maximum number of attempts to move the message to the DLQ.
-    uint32 max_attempts = 3;
+  // Maximum number of attempts to move the message to the DLQ.
+  uint32 max_attempts = 3;
 }
 
 message ExponentialBackoff {
-    // Initial backoff duration in milliseconds.
-    int32 initial_backoff_ms = 1;
+  // Initial backoff duration in milliseconds.
+  int32 initial_backoff_ms = 1;
 
-    // Maximum backoff duration in milliseconds.
-    int32 max_backoff_ms = 2;
+  // Maximum backoff duration in milliseconds.
+  int32 max_backoff_ms = 2;
 
-    // Backoff multiplier.
-    double multiplier = 3;
+  // Backoff multiplier.
+  double multiplier = 3;
 }
 
 // Retry policy for message consumption.
 message RetryPolicy {
-    oneof retry_policy {
-      // Exponential backoff strategy.
-      ExponentialBackoff exponential_backoff = 1;
-    }
+  oneof retry_policy {
+    // Exponential backoff strategy.
+    ExponentialBackoff exponential_backoff = 1;
+  }
 
-    // action policy after retries are exhausted.
-    oneof action {
-      // Immediately drop the message after retries are exhausted.
-      DropAction drop = 4;
+  // Action policy after retries are exhausted.
+  oneof action {
+    // Immediately drop the message after retries are exhausted.
+    DropAction drop = 4;
 
-      // Move the message to a dead-letter queue (DLQ).
-      DLQAction dlq = 5;
-    }
+    // Move the message to a dead-letter queue (DLQ).
+    DLQAction dlq = 5;
+  }
 }
 
 // Lambda represents a serverless function that can be invoked as part of a workflow.
@@ -68,21 +68,42 @@ message ParallelConsumer {
   uint32 parallelism = 1;
 }
 
+// OutputKafkaPolicy defines the policy for producing messages to Kafka.
+message OutputKafkaPolicy {
+  // Kafka topic to produce messages to.
+  // Required.
+  string topic = 1;
+
+  // Whether to copy headers from the consumed message to the produced message.
+  // Default is false.
+  bool copy_headers = 2;
+
+  // Whether to skip producing messages with empty payloads.
+  // Default is false.
+  bool skip_empty_message = 3;
+}
+
 message Consumer {
-    // Unique identifier for the consumer group.
-    string group_id = 1;
+  // Unique identifier for the consumer group.
+  string group_id = 1;
 
-    // List of topics the consumer subscribes to.
-    repeated string topics = 2;
+  // List of topics the consumer subscribes to.
+  repeated string topics = 2;
 
-    // List of lambdas associated with the consumer.
-    repeated Lambda lambdas = 3;
+  // List of lambdas associated with the consumer.
+  repeated Lambda lambdas = 3;
 
-    RetryPolicy retry_policy = 4;
+  RetryPolicy retry_policy = 4;
 
-    // Type of consumer.
-    oneof ConsumerType {
-      BatchConsumer batch = 10;
-      ParallelConsumer parallel= 11;
-    }
+  // Type of consumer.
+  oneof ConsumerType {
+    BatchConsumer batch = 10;
+    ParallelConsumer parallel = 11;
+  }
+
+  // Output policy defines what to do with the messages received from lambdas.
+  oneof OutputPolicy {
+    // Produce received messages to Kafka.
+    OutputKafkaPolicy output_policy_kafka = 20;
+  }
 }
