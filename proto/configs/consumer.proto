@@ -49,18 +49,18 @@ message RetryPolicy {
 
 // Lambda represents a serverless function that can be invoked as part of a workflow.
 message Lambda {
-  // Required.
-  // url is the endpoint where the lambda can be accessed.
-  string url = 1;
+    // Required.
+    // url is the endpoint where the lambda can be accessed.
+    string url = 1;
 
-  // Optional. Default is 100.
-  // weight is used to determine the probability of selecting this lambda when multiple lambdas are available.
-  uint32 weight = 2;
+    // Optional. Default is 100.
+    // weight is used to determine the probability of selecting this lambda when multiple lambdas are available.
+    uint32 weight = 2;
 }
 
 message BatchConsumer {
-  // number of messages to process in a single batch.
-  uint32 batch_size = 1;
+    // number of messages to process in a single batch.
+    uint32 batch_size = 1;
 }
 
 message ParallelConsumer {
@@ -68,21 +68,42 @@ message ParallelConsumer {
   uint32 parallelism = 1;
 }
 
+// OutputKafkaPolicy defines the policy for producing messages to Kafka.
+message OutputKafkaPolicy {
+  // Kafka topic to produce messages to.
+  // Required.
+  string topic = 1;
+
+  // Whether to copy headers from the consumed message to the produced message.
+  // Default is false.
+  bool copy_headers = 2;
+
+  // Whether to skip producing messages with empty payloads.
+  // Default is false.
+  bool skip_empty_message = 3;
+}
+
 message Consumer {
-    // Unique identifier for the consumer group.
-    string group_id = 1;
+  // Unique identifier for the consumer group.
+  string group_id = 1;
 
-    // List of topics the consumer subscribes to.
-    repeated string topics = 2;
+  // List of topics the consumer subscribes to.
+  repeated string topics = 2;
 
-    // List of lambdas associated with the consumer.
-    repeated Lambda lambdas = 3;
+  // List of lambdas associated with the consumer.
+  repeated Lambda lambdas = 3;
 
-    RetryPolicy retry_policy = 4;
+  RetryPolicy retry_policy = 4;
 
-    // Type of consumer.
-    oneof ConsumerType {
-      BatchConsumer batch = 10;
-      ParallelConsumer parallel= 11;
-    }
+  // Type of consumer.
+  oneof ConsumerType {
+    BatchConsumer batch = 10;
+    ParallelConsumer parallel= 11;
+  }
+
+  // Output policy defines what to do with the messages received from lambdas.
+  oneof OutputPolicy {
+    // Produce received messages to Kafka.
+    OutputKafkaPolicy output_policy_kafka = 20;
+  }
 }
