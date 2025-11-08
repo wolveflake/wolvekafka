@@ -1,8 +1,12 @@
-load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "kafka",
-    srcs = ["producer.go"],
+    srcs = [
+        "consumer.go",
+        "producer.go",
+        "types.go",
+    ],
     importpath = "wolvekafka/go/kafka",
     visibility = ["//visibility:public"],
     deps = [
@@ -10,5 +14,15 @@ go_library(
         "//proto/configs",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@org_uber_go_zap//:zap",
+    ],
+)
+
+go_test(
+    name = "kafka_test",
+    srcs = ["consumer_test.go"],
+    embed = [":kafka"],
+    deps = [
+        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
+        "@com_github_stretchr_testify//assert",
     ],
 )

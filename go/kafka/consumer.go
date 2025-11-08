@@ -15,7 +15,7 @@
 /// TO REPRODUCE, DISCLOSE OR DISTRIBUTE ITS CONTENTS, OR TO MANUFACTURE, USE, OR SELL ANYTHING THAT IT  MAY DESCRIBE, IN WHOLE OR IN PART.
 ///
 
-package wks
+package kafka
 
 import (
 	"context"
@@ -34,8 +34,8 @@ const (
 	defaultPoolDurationMs = 100
 )
 
-type pollFunc func() (chan []*kafka.Message, error)
-type commitMessageFunc func(msg *kafka.Message) ([]kafka.TopicPartition, error)
+type PollFunc func() (chan []*Message, error)
+type CommitMessageFunc func(msg *Message) ([]TopicPartition, error)
 
 type Consumer struct {
 	// consumer name.s
@@ -53,9 +53,9 @@ type Consumer struct {
 	log *zap.SugaredLogger
 
 	// polling function (mostly for testing purposes).
-	pollFunc pollFunc
+	pollFunc PollFunc
 	// commit message function (mostly for testing purposes).
-	commitMessageFunc commitMessageFunc
+	commitMessageFunc CommitMessageFunc
 }
 
 type ConsumerParams struct {
@@ -71,16 +71,20 @@ type ConsumerParams struct {
 	// topics to subscribe to.
 	Topics []string
 
-	// polling function (mostly for testing purposes).
-	pollFunc pollFunc
+	// polling function (mostly for testing purposes), but if is set, the Kafka consumer is not initialized.
+	PollFunc PollFunc
 	// commit message function (mostly for testing purposes).
-	commitMessageFunc commitMessageFunc
+	CommitMessageFunc CommitMessageFunc
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
 func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) {
 	consumer := newConsumer(ctx, params)
 
+	// skip Kafka consumer initialization if a custom polling function is provided.
+	if params.PollFunc != nil {
+		return consumer, nil
+	}
 	bootstrapServers := ""
 	for _, server := range params.Cluster.BootstrapServers {
 		bootstrapServers += "," + server
@@ -106,6 +110,7 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 	}
 
 	consumer.kafkaConsumer = kafkaConsumer
+
 	return consumer, nil
 }
 
@@ -123,13 +128,13 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 		name:              params.Name,
 		poolDurationMs:    defaultPoolDurationMs,
 		log:               log,
-		pollFunc:          params.pollFunc,
-		commitMessageFunc: params.commitMessageFunc,
+		pollFunc:          params.PollFunc,
+		commitMessageFunc: params.CommitMessageFunc,
 	}
 }
 
 // Poll polls a message from Kafka.
-func (c *Consumer) Poll() (chan []*kafka.Message, error) {
+func (c *Consumer) Poll() (chan []*Message, error) {
 	if c.pollFunc != nil {
 		return c.pollFunc()
 	}
@@ -147,7 +152,7 @@ func (c *Consumer) Close() error {
 }
 
 // CommitMessage commits the offset of the provided message.
-func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 	if c.commitMessageFunc != nil {
 		return c.commitMessageFunc(msg)
 	}

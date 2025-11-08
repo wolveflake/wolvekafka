@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"wolvekafka/go/common/logger"
 	"wolvekafka/go/configs"
+	"wolvekafka/go/kafka"
 
 	"github.com/dropbox/godropbox/executor"
 	"go.uber.org/zap"
@@ -46,7 +47,7 @@ type WolveKafkaService struct {
 	consumers atomic.Value // map[string]*consumerRef
 
 	sendEventFunc   sendEventFunc
-	newConsumerFunc func(ctx context.Context, params ConsumerParams) (*Consumer, error)
+	newConsumerFunc func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error)
 }
 
 // WolveKafkaParams holds parameters for WKS service.
@@ -56,7 +57,7 @@ type WolveKafkaParams struct {
 	// event sending function (mostly for testing purposes).
 	sendEventFunc sendEventFunc
 	// function to create new consumer (mostly for testing purposes).
-	newConsumerFunc func(ctx context.Context, params ConsumerParams) (*Consumer, error)
+	newConsumerFunc func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error)
 }
 
 type consumerRef struct {
@@ -69,7 +70,7 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 	srvCtx, cancelFunc := context.WithCancel(ctx)
 
 	// set default functions if not provided.
-	newConsumerFunc := NewConsumer
+	newConsumerFunc := kafka.NewConsumer
 	if params.newConsumerFunc != nil {
 		logger.S().Infof("using new consumer callback function provided in params...")
 		newConsumerFunc = params.newConsumerFunc
