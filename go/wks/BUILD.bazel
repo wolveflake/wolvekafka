@@ -3,7 +3,6 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "wks",
     srcs = [
-        "consumer.go",
         "event.go",
         "lambda_selector.go",
         "processing_job.go",
@@ -15,6 +14,7 @@ go_library(
     deps = [
         "//go/common/logger",
         "//go/configs",
+        "//go/kafka",
         "//proto/configs",
         "//proto/model",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
@@ -27,7 +27,6 @@ go_library(
 go_test(
     name = "wks_test",
     srcs = [
-        "consumer_test.go",
         "lambda_selector_test.go",
         "processing_job_test.go",
         "service_test.go",
@@ -36,6 +35,7 @@ go_test(
     embed = [":wks"],
     deps = [
         "//go/configs",
+        "//go/kafka",
         "//proto/configs",
         "//proto/model",
         "@com_github_confluentinc_confluent_kafka_go_v2//kafka",

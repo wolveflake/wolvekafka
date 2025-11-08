@@ -18,8 +18,8 @@
 package wks
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"google.golang.org/protobuf/encoding/protojson"
+	"wolvekafka/go/kafka"
 
 	model_pb "wolvekafka/proto/model"
 )

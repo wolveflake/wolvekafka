@@ -27,9 +27,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.uber.org/zap"
 
+	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
 )
 
@@ -67,8 +67,8 @@ type ProcessingJob struct {
 	log *zap.SugaredLogger
 
 	// consumer instance.
-	kafkaConsumer   *Consumer
-	newConsumerFunc func(ctx context.Context, params ConsumerParams) (*Consumer, error)
+	kafkaConsumer   *kafka.Consumer
+	newConsumerFunc func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error)
 
 	// configuration part.
 	consumerCfg *configs_pb.Consumer
@@ -233,7 +233,7 @@ func sleepWithContext(ctx context.Context, duration time.Duration) error {
 }
 
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
-func (c *ProcessingJob) createKafkaConsumer(consumerParams ConsumerParams) (*Consumer, error) {
+func (c *ProcessingJob) createKafkaConsumer(consumerParams kafka.ConsumerParams) (*kafka.Consumer, error) {
 	for {
 		kafkaConsumer, err := c.newConsumerFunc(c.ctx, consumerParams)
 		if err != nil {
@@ -265,7 +265,7 @@ func (c *ProcessingJob) Execute() {
 	}
 
 	// start polling kafka messages.
-	consumerParams := ConsumerParams{
+	consumerParams := kafka.ConsumerParams{
 		Name:         c.consumerName,
 		Cluster:      c.clusterCfg,
 		PoolDuration: time.Millisecond * 500,

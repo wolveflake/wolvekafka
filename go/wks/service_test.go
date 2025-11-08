@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
+	"wolvekafka/go/kafka"
 
 	"wolvekafka/go/configs"
 	model_pb "wolvekafka/proto/model"
@@ -73,14 +73,14 @@ func TestBasic(t *testing.T) {
 	}
 	wks, err := NewWolveKafkaService(ctx, WolveKafkaParams{
 		Config: cfg,
-		newConsumerFunc: func(ctx context.Context, params ConsumerParams) (*Consumer, error) {
-			return newConsumer(ctx, ConsumerParams{
+		newConsumerFunc: func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error) {
+			return kafka.NewConsumer(ctx, kafka.ConsumerParams{
 				Cluster:  cfg.Cluster(),
-				pollFunc: pollFunc,
-				commitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+				PollFunc: pollFunc,
+				CommitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
 					return []kafka.TopicPartition{}, nil
 				},
-			}), nil
+			})
 		},
 		sendEventFunc: func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error {
 			lambdaReqChan <- msgs
@@ -174,14 +174,14 @@ func TestHttpLambda(t *testing.T) {
 	}
 	wks, err := NewWolveKafkaService(ctx, WolveKafkaParams{
 		Config: cfg,
-		newConsumerFunc: func(ctx context.Context, params ConsumerParams) (*Consumer, error) {
-			return newConsumer(ctx, ConsumerParams{
+		newConsumerFunc: func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error) {
+			return kafka.NewConsumer(ctx, kafka.ConsumerParams{
 				Cluster:  cfg.Cluster(),
-				pollFunc: pollFunc,
-				commitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+				PollFunc: pollFunc,
+				CommitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
 					return []kafka.TopicPartition{}, nil
 				},
-			}), nil
+			})
 		},
 	})
 	assert.NoError(t, err)
