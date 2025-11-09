@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "event.go",
         "lambda_selector.go",
+        "output_policy.go",
         "processing_job.go",
         "service.go",
         "types.go",

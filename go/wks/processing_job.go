@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +30,7 @@ import (
 
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
+	model_pb "wolvekafka/proto/model"
 )
 
 var (
@@ -45,7 +45,7 @@ const (
 	maxRetryAttemptsCap        = 32
 )
 
-type sendEventFunc func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error
+type sendEventFunc func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error)
 
 type consumerConfigCtxKey struct{}
 
@@ -75,60 +75,71 @@ type ProcessingJob struct {
 	clusterCfg  *configs_pb.Cluster
 
 	lambdaSelector *LambdaSelector
+
+	// lambda response msg handler.
+	outputPolicy *OutputPolicy
 }
 
-func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error {
-	if len(msgs) == 0 {
-		return nil
+func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+	if len(req.GetMessages()) == 0 {
+		return nil, nil
 	}
 
 	lambda := c.lambdaSelector.Select()
-	lambdaReq := kafkaMsgsToLambdaRequest(msgs)
 
 	// convert lambda request to JSON payload.
-	payload, err := ConvertLambdaRequestToJson(lambdaReq)
+	payload, err := ConvertLambdaRequestToJson(req)
 	if err != nil {
-		return fmt.Errorf("failed to marshal lambda request: %w", err)
+		return nil, fmt.Errorf("failed to marshal lambda request: %w", err)
 	}
 
-	sendOnce := func(ctx context.Context) error {
+	sendOnce := func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, lambda.GetUrl(), bytes.NewReader(payload))
 		if err != nil {
-			return fmt.Errorf("failed to create http request: %w", err)
+
+			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			return fmt.Errorf("failed to send lambda request: %w", err)
+			return nil, fmt.Errorf("failed to send lambda request: %w", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1024))
-			if readErr != nil {
-				return fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, readErr)
-			}
-			return fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			return nil, fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode)
 		}
 
-		_, _ = io.Copy(io.Discard, resp.Body)
-		return nil
+		// read & parse response.
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, err)
+		}
+		respMsgs, err := ParseLambdaResponse(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal lambda response: %w", err)
+		}
+
+		return respMsgs, nil
 	}
 
 	return c.executeWithRetry(ctx, sendOnce)
 }
 
 // executeWithRetry runs the provided function until it succeeds or retry policy rules are exhausted.
-func (c *ProcessingJob) executeWithRetry(ctx context.Context, fn func(context.Context) error) error {
-	lastErr := fn(ctx)
+func (c *ProcessingJob) executeWithRetry(
+	ctx context.Context,
+	fn func(context.Context) (*model_pb.LambdaResponse, error)) (*model_pb.LambdaResponse, error) {
+
+	lambdaResponse, lastErr := fn(ctx)
 	if lastErr == nil {
-		return nil
+		return lambdaResponse, nil
 	}
 
 	retryPolicy := c.consumerCfg.GetRetryPolicy()
 	if retryPolicy == nil {
-		return lastErr
+		return lambdaResponse, lastErr
 	}
 
 	var backoffDurations []time.Duration
@@ -137,7 +148,7 @@ func (c *ProcessingJob) executeWithRetry(ctx context.Context, fn func(context.Co
 	}
 
 	if len(backoffDurations) == 0 {
-		return lastErr
+		return lambdaResponse, lastErr
 	}
 
 	totalAttempts := 1 + len(backoffDurations)
@@ -145,7 +156,7 @@ func (c *ProcessingJob) executeWithRetry(ctx context.Context, fn func(context.Co
 
 	for idx, backoff := range backoffDurations {
 		if err := sleepWithContext(ctx, backoff); err != nil {
-			return err
+			return lambdaResponse, err
 		}
 
 		attempt := idx + 2
@@ -155,19 +166,19 @@ func (c *ProcessingJob) executeWithRetry(ctx context.Context, fn func(context.Co
 			c.log.Warnf("[%v:%v] retrying message batch attempt %d/%d", c.consumerName, c.jobId, attempt, totalAttempts)
 		}
 
-		lastErr = fn(ctx)
+		lambdaResponse, lastErr = fn(ctx)
 		if lastErr == nil {
-			return nil
+			return lambdaResponse, nil
 		}
 	}
 
 	if retryPolicy.GetDrop() != nil {
 		c.log.Warnf("[%v:%v] dropping message batch after %d attempts due to: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
-		return nil
+		return nil, nil
 	}
 
 	c.log.Errorf("[%v:%v] exhausted %d attempts sending message batch: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
-	return lastErr
+	return lambdaResponse, lastErr
 }
 
 // buildBackoffSchedule transforms the proto configuration into a bounded sequence of backoff durations.
@@ -307,10 +318,21 @@ func (c *ProcessingJob) Execute() {
 					msg.TopicPartition.Offset)
 			}
 
-			err = c.sendEventFunc(c, sendCtx, msgs)
+			// convert kafka messages to lambda request.
+			lambdaReq := kafkaMsgsToLambdaRequest(msgs)
+
+			lambdaResp, err := c.sendEventFunc(c, sendCtx, lambdaReq)
 			c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
 			if err != nil {
 				continue
+			}
+
+			// process lambda response.
+			if lambdaResp != nil {
+				err = c.outputPolicy.Process(sendCtx, lambdaReq, lambdaResp)
+				if err != nil {
+					c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
+				}
 			}
 
 			// You can process the message here
