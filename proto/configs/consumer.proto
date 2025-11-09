@@ -68,6 +68,11 @@ message ParallelConsumer {
   uint32 parallelism = 1;
 }
 
+// OutputDropPolicy defines the policy for dropping/skipping messages.
+message OutputDropPolicy{
+  // No additional fields needed for dropping messages.
+}
+
 // OutputKafkaPolicy defines the policy for producing messages to Kafka.
 message OutputKafkaPolicy {
   // Kafka topic to produce messages to.
@@ -102,8 +107,11 @@ message Consumer {
   }
 
   // Output policy defines what to do with the messages received from lambdas.
+  // Default policy is to drop the messages.
   oneof OutputPolicy {
+    // Drop the messages.
+    OutputDropPolicy drop = 20;
     // Produce received messages to Kafka.
-    OutputKafkaPolicy output_policy_kafka = 20;
+    OutputKafkaPolicy kafka = 21;
   }
 }

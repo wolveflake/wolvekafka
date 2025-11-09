@@ -85,3 +85,12 @@ func ParseLambdaRequestJson(payload []byte) (*model_pb.LambdaRequest, error) {
 	}
 	return result, nil
 }
+
+// ParseLambdaResponse parses a JSON representation of a LambdaResponse into its protobuf message.
+func ParseLambdaResponse(payload []byte) (*model_pb.LambdaResponse, error) {
+	result := &model_pb.LambdaResponse{}
+	if err := unmarshaler.Unmarshal(payload, result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}

@@ -142,6 +142,11 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					consumerCfg: consumerCfg,
 					clusterCfg:  config.Cluster(),
 
+					// output policy.
+					outputPolicy: NewOutputPolicy(OutputPolicyParams{
+						ConsumerCfg: consumerCfg,
+					}),
+
 					newConsumerFunc: w.newConsumerFunc,
 				}
 				workPool.Process(job)

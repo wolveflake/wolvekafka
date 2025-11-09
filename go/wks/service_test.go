@@ -39,7 +39,7 @@ func TestBasic(t *testing.T) {
 	assert.NotNil(t, ctx)
 
 	// start a test HTTP server to act as a lambda endpoint
-	lambdaReqChan := make(chan []*kafka.Message, 1)
+	lambdaReqChan := make(chan *model_pb.LambdaRequest, 1)
 
 	jsonCfg := fmt.Sprintf(`{
 		"cluster": {
@@ -82,9 +82,15 @@ func TestBasic(t *testing.T) {
 				},
 			})
 		},
-		sendEventFunc: func(c *ProcessingJob, ctx context.Context, msgs []*kafka.Message) error {
-			lambdaReqChan <- msgs
-			return nil
+		sendEventFunc: func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+			lambdaReqChan <- req
+			return &model_pb.LambdaResponse{
+				Messages: []*model_pb.ResponseMessage{
+					&model_pb.ResponseMessage{
+						Status: model_pb.ResponseStatus_STATUS_SUCCESS,
+					},
+				},
+			}, nil
 		},
 	})
 	assert.NoError(t, err)
@@ -105,10 +111,10 @@ func TestBasic(t *testing.T) {
 
 	// wait for the lambda to be invoked
 	select {
-	case msgs := <-lambdaReqChan:
-		assert.NotNil(t, msgs)
-		assert.Equal(t, 1, len(msgs))
-		assert.Equal(t, "test message", string(msgs[0].Value))
+	case req := <-lambdaReqChan:
+		assert.NotNil(t, req)
+		assert.Equal(t, 1, len(req.GetMessages()))
+		assert.Equal(t, "test message", string(req.Messages[0].Value))
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for lambda invocation")
 	}

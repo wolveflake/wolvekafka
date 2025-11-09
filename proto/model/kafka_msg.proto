@@ -53,12 +53,16 @@ enum ResponseStatus {
   STATUS_SUCCESS = 2;
 }
 
-// lambda processing response structure.
-message LambdaResponse {
+message ResponseMessage {
   ResponseStatus status = 1;
-
   // Optional message as a response from lambda.
   bytes message = 2;
+  // Encoding of the response message.
   MessageEncoding encoding = 3;
+}
+
+// lambda processing response message
+message LambdaResponse {
+  repeated ResponseMessage messages = 1;
 }
 
