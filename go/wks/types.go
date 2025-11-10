@@ -124,8 +124,7 @@ func ResponseMessageToKafkaMessage(policy *configs_pb.OutputKafkaPolicy, msg *mo
 }
 
 func HeadersToKafkaHeaders(headers []*model_pb.Header) []kafka.Header {
-	kafkaHeaders := make([]kafka.Header, len(headers))
-
+	kafkaHeaders := make([]kafka.Header, 0, len(headers))
 	for _, header := range headers {
 		kafkaHeaders = append(kafkaHeaders, kafka.Header{
 			Key:   header.GetKey(),
