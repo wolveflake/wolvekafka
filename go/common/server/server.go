@@ -19,6 +19,7 @@ package server
 
 import (
 	"context"
+	errors2 "errors"
 	"flag"
 	"fmt"
 	"io"
@@ -132,6 +133,16 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 		return nil, err
 	}
 
+	// Set up OpenTelemetry.
+	otelShutdown, err := setupOTelSDK(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Handle shutdown properly so nothing leaks.
+	defer func() {
+		err = errors2.Join(err, otelShutdown(context.Background()))
+	}()
+
 	ctxSrv, ctxSrvCancel := context.WithCancel(ctx)
 	srv := &Server{
 		ctx:          ctxSrv,
@@ -161,7 +172,7 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 	//srv.HTTPRouter.Use(httpMetricsInterceptor)
 	// Expose the /metrics endpoint for Prometheus to scrape for both gRPC and http routers
 	// srv.HTTPRouter.Handle("/metrics", promhttp.Handler())
-	return srv, nil
+	return srv, err
 }
 
 // startCompositeListener would start listeners for both http and gRPC server
