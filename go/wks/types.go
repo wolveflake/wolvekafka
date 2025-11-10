@@ -18,9 +18,13 @@
 package wks
 
 import (
+	"fmt"
 	"google.golang.org/protobuf/encoding/protojson"
+
+	"time"
 	"wolvekafka/go/kafka"
 
+	configs_pb "wolvekafka/proto/configs"
 	model_pb "wolvekafka/proto/model"
 )
 
@@ -93,4 +97,41 @@ func ParseLambdaResponse(payload []byte) (*model_pb.LambdaResponse, error) {
 		return nil, err
 	}
 	return result, nil
+}
+
+// ResponseMessageToKafkaMessage constructs kafka message based on response messages and output policy.
+func ResponseMessageToKafkaMessage(policy *configs_pb.OutputKafkaPolicy, msg *model_pb.ResponseMessage) (*kafka.Message, error) {
+	value := msg.GetMessage()
+	if value == nil || len(value) == 0 {
+		if msg.GetEncoding() != model_pb.MessageEncoding_ENCODING_JSON {
+			return nil, fmt.Errorf("response message is empty and doesn't have default value")
+		}
+		value = emptyJsonMessageValue
+	}
+
+	tp := kafka.TopicPartition{
+		Topic: &policy.Topic,
+		// TODO(13): make it configurable.
+		Partition: kafka.PartitionAny,
+	}
+
+	// Construct the kafka.Message
+	return &kafka.Message{
+		TopicPartition: tp,
+		Value:          value,
+		Timestamp:      time.Now(), // Optional: Message timestamp
+	}, nil
+}
+
+func HeadersToKafkaHeaders(headers []*model_pb.Header) []kafka.Header {
+	kafkaHeaders := make([]kafka.Header, len(headers))
+
+	for _, header := range headers {
+		kafkaHeaders = append(kafkaHeaders, kafka.Header{
+			Key:   header.GetKey(),
+			Value: header.GetValue(),
+		})
+	}
+
+	return kafkaHeaders
 }
