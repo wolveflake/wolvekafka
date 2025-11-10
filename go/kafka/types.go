@@ -25,3 +25,6 @@ import (
 
 type Message = kafka.Message
 type TopicPartition = kafka.TopicPartition
+type Header = kafka.Header
+
+const PartitionAny = kafka.PartitionAny

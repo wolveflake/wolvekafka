@@ -28,6 +28,10 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	emptyJsonMessageValue = []byte("{}")
+)
+
 type OutputPolicy struct {
 	kafkaProducer *kafka.Producer
 
@@ -55,7 +59,60 @@ func (o *OutputPolicy) executeDrop(ctx context.Context, req *model_pb.LambdaRequ
 }
 
 func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaRequest, resp *model_pb.LambdaResponse) error {
-	return fmt.Errorf("not implemented")
+
+	if o.kafkaProducer == nil {
+		return fmt.Errorf("kafka producer is not initialized")
+	}
+
+	policy := o.consumerCfg.GetKafka()
+
+	// construct kafka message.
+	msgs := make([]*kafka.Message, len(resp.GetMessages()))
+
+	for i, resp := range resp.GetMessages() {
+		// extracting meta information from request for logging.
+		reqMsg := req.Messages[i]
+		topic := reqMsg.GetTopic()
+		partition := reqMsg.GetPartition()
+		offset := reqMsg.GetOffset()
+
+		// skipping empty message.
+		if len(resp.GetMessage()) == 0 && policy.GetSkipEmptyMessage() {
+			o.log.Infof("Skipping empty response: topic: %v, partition: %v, offset: %v", topic, partition, offset)
+			continue
+		}
+
+		outMsg, err := ResponseMessageToKafkaMessage(policy, resp)
+		if err != nil {
+			o.log.Infof(
+				"failed to construct kafka message for response based on request: topic: %v, partition: %v, offset: %v, err: %v",
+				topic,
+				partition,
+				offset,
+				err)
+			return err
+		}
+
+		// copy headers if it is needed.
+		if policy.GetCopyHeaders() {
+			outMsg.Headers = HeadersToKafkaHeaders(reqMsg.GetHeaders())
+		}
+
+		msgs = append(msgs, outMsg)
+	}
+
+	// produce generated messages.
+	// TODO(13): switch to batch API.
+	for i, msg := range msgs {
+		err := o.kafkaProducer.Produce(ctx, msg)
+		if err != nil {
+			o.log.Infof(
+				"failed to produce message [%d/%d]: err: %v", i, len(msgs), err)
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (o *OutputPolicy) Process(ctx context.Context, req *model_pb.LambdaRequest, resp *model_pb.LambdaResponse) error {
