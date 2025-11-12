@@ -62,27 +62,21 @@ func TestProducerAndConsumerEndToEnd(t *testing.T) {
 	timeout := time.NewTimer(30 * time.Second)
 	defer timeout.Stop()
 
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("context cancelled before receiving message: %v", ctx.Err())
-		case <-timeout.C:
-			t.Fatalf("timed out waiting for message on %s", topic)
-		case msgs, ok := <-msgChan:
-			if !ok {
-				t.Fatalf("message channel closed before receiving message")
-			}
-			if len(msgs) == 0 {
-				continue
-			}
-
-			msg := msgs[0]
-			require.Equal(t, topic, *msg.TopicPartition.Topic)
-			require.Equal(t, payload, msg.Value)
-
-			_, err := consumer.CommitMessage(msg)
-			require.NoError(t, err)
-			return
+	select {
+	case <-ctx.Done():
+		t.Fatalf("context cancelled before receiving message: %v", ctx.Err())
+	case <-timeout.C:
+		t.Fatalf("timed out waiting for message on %s", topic)
+	case msgs, ok := <-msgChan:
+		if !ok {
+			t.Fatalf("message channel closed before receiving message")
 		}
+		msg := msgs[0]
+		require.Equal(t, topic, *msg.TopicPartition.Topic)
+		require.Equal(t, payload, msg.Value)
+
+		_, err := consumer.CommitMessage(msg)
+		require.NoError(t, err)
+		return
 	}
 }
