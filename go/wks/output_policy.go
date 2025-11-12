@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 
+	"wolvekafka/go/common/logger"
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
 	model_pb "wolvekafka/proto/model"
@@ -50,7 +51,9 @@ type OutputPolicyParams struct {
 
 func NewOutputPolicy(params OutputPolicyParams) *OutputPolicy {
 	return &OutputPolicy{
-		consumerCfg: params.ConsumerCfg,
+		consumerCfg:   params.ConsumerCfg,
+		kafkaProducer: params.KafkaProducer,
+		log:           logger.S(),
 	}
 }
 
@@ -67,7 +70,7 @@ func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaReq
 	policy := o.consumerCfg.GetKafka()
 
 	// construct kafka message.
-	msgs := make([]*kafka.Message, len(resp.GetMessages()))
+	msgs := make([]*kafka.Message, 0, len(resp.GetMessages()))
 
 	for i, resp := range resp.GetMessages() {
 		// extracting meta information from request for logging.
@@ -104,6 +107,9 @@ func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaReq
 	// produce generated messages.
 	// TODO(13): switch to batch API.
 	for i, msg := range msgs {
+		if msg == nil {
+			continue
+		}
 		err := o.kafkaProducer.Produce(ctx, msg)
 		if err != nil {
 			o.log.Infof(

@@ -289,6 +289,11 @@ func (c *ProcessingJob) Execute() {
 	}
 	c.kafkaConsumer = kafkaConsumer
 
+	if err := c.ensureOutputProducer(); err != nil {
+		c.log.Errorf("[%v:%v] failed to create output kafka producer: %v", c.consumerName, c.jobId, err)
+		return
+	}
+
 	msgChan, err := c.kafkaConsumer.Poll()
 	if err != nil {
 		c.log.Errorf("[%v:%v] error polling messages: %v", c.consumerName, c.jobId, err)
@@ -364,4 +369,37 @@ func (c *ProcessingJob) done() {
 	if err != nil {
 		c.log.Errorf("[%v:%v] error closing consumer: %v", c.consumerName, c.jobId, err)
 	}
+
+	if c.outputPolicy != nil {
+		if err := c.outputPolicy.Close(); err != nil {
+			c.log.Errorf("[%v:%v] error closing output policy: %v", c.consumerName, c.jobId, err)
+		}
+	}
+}
+
+func (c *ProcessingJob) ensureOutputProducer() error {
+	if c.outputPolicy == nil {
+		return nil
+	}
+	if c.consumerCfg.GetKafka() == nil {
+		return nil
+	}
+	if c.outputPolicy.kafkaProducer != nil {
+		return nil
+	}
+
+	producerName := fmt.Sprintf("%s-output-%d", c.consumerName, c.jobId)
+	producer, err := kafka.NewProducer(c.ctx, kafka.ProducerParams{
+		Name:    producerName,
+		Cluster: c.clusterCfg,
+	})
+	if err != nil {
+		return err
+	}
+
+	c.outputPolicy.kafkaProducer = producer
+	if c.outputPolicy.log == nil {
+		c.outputPolicy.log = c.log
+	}
+	return nil
 }
