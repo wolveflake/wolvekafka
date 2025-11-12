@@ -1,0 +1,9 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "fixture",
+    srcs = ["fixture.go"],
+    importpath = "wolvekafka/go/itest/fixture",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_confluentinc_confluent_kafka_go_v2//kafka"],
+)
