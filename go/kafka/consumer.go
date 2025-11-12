@@ -32,10 +32,22 @@ import (
 const (
 	// defaultPoolDurationMs is the default duration (in milliseconds) for polling Kafka messages.
 	defaultPoolDurationMs = 100
+	// defaultBatchMaxMessages flushes after each message unless overridden.
+	defaultBatchMaxMessages = 1
+	// defaultBatchMaxBytes is an ample cap to prevent unbounded batch growth.
+	defaultBatchMaxBytes = 1 << 20 // 1 MiB
+	// defaultBatchMaxWait bounds how long a partial batch can wait before being emitted.
+	defaultBatchMaxWait = 500 * time.Millisecond
 )
 
 type PollFunc func() (chan []*Message, error)
 type CommitMessageFunc func(msg *Message) ([]TopicPartition, error)
+
+type kafkaConsumerClient interface {
+	Poll(int) kafka.Event
+	Close() error
+	CommitMessage(*Message) ([]TopicPartition, error)
+}
 
 type Consumer struct {
 	// consumer name.s
@@ -47,10 +59,15 @@ type Consumer struct {
 	poolDurationMs int
 
 	// Kafka consumer instance.
-	kafkaConsumer *kafka.Consumer
+	kafkaConsumer kafkaConsumerClient
 
 	// logger.
 	log *zap.SugaredLogger
+
+	// batch configuration.
+	batchMaxMessages int
+	batchMaxBytes    int
+	batchMaxWait     time.Duration
 
 	// polling function (mostly for testing purposes).
 	pollFunc PollFunc
@@ -75,6 +92,11 @@ type ConsumerParams struct {
 	PollFunc PollFunc
 	// commit message function (mostly for testing purposes).
 	CommitMessageFunc CommitMessageFunc
+
+	// batch configuration for Poll().
+	BatchMaxMessages int
+	BatchMaxBytes    int
+	BatchMaxWait     time.Duration
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
@@ -121,6 +143,21 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 		poolDurationMs = defaultPoolDurationMs
 	}
 
+	batchMaxMessages := params.BatchMaxMessages
+	if batchMaxMessages <= 0 {
+		batchMaxMessages = defaultBatchMaxMessages
+	}
+
+	batchMaxBytes := params.BatchMaxBytes
+	if batchMaxBytes <= 0 {
+		batchMaxBytes = defaultBatchMaxBytes
+	}
+
+	batchMaxWait := params.BatchMaxWait
+	if batchMaxWait <= 0 {
+		batchMaxWait = defaultBatchMaxWait
+	}
+
 	log := logger.S()
 
 	return &Consumer{
@@ -128,6 +165,9 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 		name:              params.Name,
 		poolDurationMs:    int(poolDurationMs),
 		log:               log,
+		batchMaxMessages:  batchMaxMessages,
+		batchMaxBytes:     batchMaxBytes,
+		batchMaxWait:      batchMaxWait,
 		pollFunc:          params.PollFunc,
 		commitMessageFunc: params.CommitMessageFunc,
 	}
@@ -148,37 +188,81 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 	go func() {
 		defer close(msgChan)
 
-		for {
+		batch := make([]*Message, 0, c.batchMaxMessages)
+		batchBytes := 0
+		var flushDeadline time.Time
+
+		flush := func() {
+			if len(batch) == 0 {
+				return
+			}
+
+			out := make([]*Message, len(batch))
+			copy(out, batch)
+
 			select {
 			case <-c.ctx.Done():
+				// drop if context is cancelled.
+			case msgChan <- out:
+			}
+
+			batch = batch[:0]
+			batchBytes = 0
+			flushDeadline = time.Time{}
+		}
+
+		for {
+			if err := c.ctx.Err(); err != nil {
+				flush()
 				return
-			default:
 			}
 
 			event := c.kafkaConsumer.Poll(c.poolDurationMs)
-			if event == nil {
-				continue
+			if event != nil {
+				switch e := event.(type) {
+				case *kafka.Message:
+					batch = append(batch, e)
+					batchBytes += approximateMessageSize(e)
+
+					if len(batch) == 1 && c.batchMaxWait > 0 {
+						flushDeadline = time.Now().Add(c.batchMaxWait)
+					}
+
+					if (c.batchMaxMessages > 0 && len(batch) >= c.batchMaxMessages) ||
+						(c.batchMaxBytes > 0 && batchBytes >= c.batchMaxBytes) {
+						flush()
+					}
+				case kafka.Error:
+					c.log.Errorf("Kafka poll error: %v", e)
+					if e.Code() == kafka.ErrAllBrokersDown {
+						flush()
+						return
+					}
+				default:
+					// ignore other events
+				}
 			}
 
-			switch e := event.(type) {
-			case *kafka.Message:
-				select {
-				case <-c.ctx.Done():
-					return
-				case msgChan <- []*Message{e}:
-				}
-			case kafka.Error:
-				c.log.Errorf("Kafka poll error: %v", e)
-				if e.Code() == kafka.ErrAllBrokersDown {
-					return
-				}
-			default:
-				// ignore other events
+			if len(batch) > 0 && c.batchMaxWait > 0 && !flushDeadline.IsZero() && time.Now().After(flushDeadline) {
+				flush()
 			}
 		}
 	}()
 
 	return msgChan, nil
+}
+
+func approximateMessageSize(msg *kafka.Message) int {
+	if msg == nil {
+		return 0
+	}
+
+	size := len(msg.Value) + len(msg.Key)
+	for _, h := range msg.Headers {
+		size += len(h.Key) + len(h.Value)
+	}
+
+	return size
 }
 
 // Close closes the Kafka consumer.
