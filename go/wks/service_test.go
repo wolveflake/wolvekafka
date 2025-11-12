@@ -26,10 +26,11 @@ import (
 	"testing"
 	"time"
 
+	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
-	"wolvekafka/go/kafka"
 
 	"wolvekafka/go/configs"
+	"wolvekafka/go/kafka"
 	model_pb "wolvekafka/proto/model"
 )
 
@@ -67,20 +68,13 @@ func TestBasic(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
 
-	msgChan := make(chan []*kafka.Message, 1)
-	pollFunc := func() (chan []*kafka.Message, error) {
-		return msgChan, nil
-	}
+	clientSource := newStubKafkaClientSource()
 	wks, err := NewWolveKafkaService(ctx, WolveKafkaParams{
 		Config: cfg,
 		newConsumerFunc: func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error) {
-			return kafka.NewConsumer(ctx, kafka.ConsumerParams{
-				Cluster:  cfg.Cluster(),
-				PollFunc: pollFunc,
-				CommitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
-					return []kafka.TopicPartition{}, nil
-				},
-			})
+			params.Cluster = cfg.Cluster()
+			params.Client = clientSource.NewClient()
+			return kafka.NewConsumer(ctx, params)
 		},
 		sendEventFunc: func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
 			lambdaReqChan <- req
@@ -107,7 +101,7 @@ func TestBasic(t *testing.T) {
 		},
 		Value: []byte("test message"),
 	}
-	msgChan <- []*kafka.Message{testMsg}
+	clientSource.Emit(testMsg)
 
 	// wait for the lambda to be invoked
 	select {
@@ -174,20 +168,13 @@ func TestHttpLambda(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, cfg)
 
-	msgChan := make(chan []*kafka.Message, 1)
-	pollFunc := func() (chan []*kafka.Message, error) {
-		return msgChan, nil
-	}
+	clientSource := newStubKafkaClientSource()
 	wks, err := NewWolveKafkaService(ctx, WolveKafkaParams{
 		Config: cfg,
 		newConsumerFunc: func(ctx context.Context, params kafka.ConsumerParams) (*kafka.Consumer, error) {
-			return kafka.NewConsumer(ctx, kafka.ConsumerParams{
-				Cluster:  cfg.Cluster(),
-				PollFunc: pollFunc,
-				CommitMessageFunc: func(msg *kafka.Message) ([]kafka.TopicPartition, error) {
-					return []kafka.TopicPartition{}, nil
-				},
-			})
+			params.Cluster = cfg.Cluster()
+			params.Client = clientSource.NewClient()
+			return kafka.NewConsumer(ctx, params)
 		},
 	})
 	assert.NoError(t, err)
@@ -204,7 +191,7 @@ func TestHttpLambda(t *testing.T) {
 		},
 		Value: []byte("test message"),
 	}
-	msgChan <- []*kafka.Message{testMsg}
+	clientSource.Emit(testMsg)
 
 	// wait for the lambda to be invoked
 	select {
@@ -215,4 +202,45 @@ func TestHttpLambda(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout waiting for lambda invocation")
 	}
+}
+
+type stubKafkaClientSource struct {
+	events chan kafka.Event
+}
+
+func newStubKafkaClientSource() *stubKafkaClientSource {
+	return &stubKafkaClientSource{
+		events: make(chan kafka.Event, 16),
+	}
+}
+
+func (s *stubKafkaClientSource) Emit(msg *kafka.Message) {
+	s.events <- (*ckafka.Message)(msg)
+}
+
+func (s *stubKafkaClientSource) NewClient() kafka.KafkaConsumerClient {
+	return &stubKafkaClient{
+		source: s,
+	}
+}
+
+type stubKafkaClient struct {
+	source *stubKafkaClientSource
+}
+
+func (c *stubKafkaClient) Poll(ms int) kafka.Event {
+	select {
+	case ev := <-c.source.events:
+		return ev
+	case <-time.After(time.Duration(ms) * time.Millisecond):
+		return nil
+	}
+}
+
+func (c *stubKafkaClient) Close() error {
+	return nil
+}
+
+func (c *stubKafkaClient) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+	return []kafka.TopicPartition{}, nil
 }

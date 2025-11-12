@@ -40,17 +40,15 @@ const (
 	defaultBatchMaxWait = 500 * time.Millisecond
 )
 
-type PollFunc func() (chan []*Message, error)
-type CommitMessageFunc func(msg *Message) ([]TopicPartition, error)
-
-type kafkaConsumerClient interface {
+// KafkaConsumerClient is the minimal surface area required from a Kafka consumer implementation.
+type KafkaConsumerClient interface {
 	Poll(int) kafka.Event
 	Close() error
 	CommitMessage(*Message) ([]TopicPartition, error)
 }
 
 type Consumer struct {
-	// consumer name.s
+	// consumer name.
 	name string
 
 	ctx context.Context
@@ -59,7 +57,7 @@ type Consumer struct {
 	poolDurationMs int
 
 	// Kafka consumer instance.
-	kafkaConsumer kafkaConsumerClient
+	kafkaConsumer KafkaConsumerClient
 
 	// logger.
 	log *zap.SugaredLogger
@@ -68,11 +66,6 @@ type Consumer struct {
 	batchMaxMessages int
 	batchMaxBytes    int
 	batchMaxWait     time.Duration
-
-	// polling function (mostly for testing purposes).
-	pollFunc PollFunc
-	// commit message function (mostly for testing purposes).
-	commitMessageFunc CommitMessageFunc
 }
 
 type ConsumerParams struct {
@@ -88,25 +81,28 @@ type ConsumerParams struct {
 	// topics to subscribe to.
 	Topics []string
 
-	// polling function (mostly for testing purposes), but if is set, the Kafka consumer is not initialized.
-	PollFunc PollFunc
-	// commit message function (mostly for testing purposes).
-	CommitMessageFunc CommitMessageFunc
-
 	// batch configuration for Poll().
 	BatchMaxMessages int
 	BatchMaxBytes    int
 	BatchMaxWait     time.Duration
+
+	// Client allows injecting a Kafka consumer implementation (for testing).
+	Client KafkaConsumerClient
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
 func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) {
 	consumer := newConsumer(ctx, params)
 
-	// skip Kafka consumer initialization if a custom polling function is provided.
-	if params.PollFunc != nil {
+	if params.Client != nil {
+		consumer.kafkaConsumer = params.Client
 		return consumer, nil
 	}
+
+	if params.Cluster == nil {
+		return nil, fmt.Errorf("cluster configuration is required")
+	}
+
 	bootstrapServers := ""
 	for _, server := range params.Cluster.BootstrapServers {
 		bootstrapServers += "," + server
@@ -117,16 +113,13 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 		"auto.offset.reset": "earliest",
 	}
 
-	// create Kafka consumer.
 	kafkaConsumer, err := kafka.NewConsumer(configMap)
 	if err != nil {
 		consumer.log.Errorf("Failed to create %v consumer: %v", params.Name, err)
 		return nil, err
 	}
 
-	// subscribe to topics.
-	err = kafkaConsumer.SubscribeTopics(params.Topics, nil)
-	if err != nil {
+	if err := kafkaConsumer.SubscribeTopics(params.Topics, nil); err != nil {
 		consumer.log.Errorf("Failed to subscribe to %v topics, %s consumer: %v", params.Topics, params.Name, err)
 		return nil, err
 	}
@@ -161,24 +154,18 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	log := logger.S()
 
 	return &Consumer{
-		ctx:               ctx,
-		name:              params.Name,
-		poolDurationMs:    int(poolDurationMs),
-		log:               log,
-		batchMaxMessages:  batchMaxMessages,
-		batchMaxBytes:     batchMaxBytes,
-		batchMaxWait:      batchMaxWait,
-		pollFunc:          params.PollFunc,
-		commitMessageFunc: params.CommitMessageFunc,
+		ctx:              ctx,
+		name:             params.Name,
+		poolDurationMs:   int(poolDurationMs),
+		log:              log,
+		batchMaxMessages: batchMaxMessages,
+		batchMaxBytes:    batchMaxBytes,
+		batchMaxWait:     batchMaxWait,
 	}
 }
 
-// Poll polls a message from Kafka.
+// Poll polls messages from Kafka and delivers them in batches bounded by the configured limits.
 func (c *Consumer) Poll() (chan []*Message, error) {
-	if c.pollFunc != nil {
-		return c.pollFunc()
-	}
-
 	if c.kafkaConsumer == nil {
 		return nil, fmt.Errorf("kafka consumer is not initialized")
 	}
@@ -267,7 +254,6 @@ func approximateMessageSize(msg *kafka.Message) int {
 
 // Close closes the Kafka consumer.
 func (c *Consumer) Close() error {
-	// no instance in tests.
 	if c.kafkaConsumer == nil {
 		return nil
 	}
@@ -276,8 +262,8 @@ func (c *Consumer) Close() error {
 
 // CommitMessage commits the offset of the provided message.
 func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
-	if c.commitMessageFunc != nil {
-		return c.commitMessageFunc(msg)
+	if c.kafkaConsumer == nil {
+		return nil, fmt.Errorf("kafka consumer is not initialized")
 	}
 	return c.kafkaConsumer.CommitMessage(msg)
 }

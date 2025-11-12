@@ -31,31 +31,26 @@ func TestCustomPoll(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	msgChan := make(chan []*kafka.Message, 1)
-	pollFunc := func() (chan []*kafka.Message, error) {
-		return msgChan, nil
-	}
-	msgChan <- []*kafka.Message{
-		{
-			TopicPartition: kafka.TopicPartition{Topic: &[]string{"test-topic"}[0], Partition: 0, Offset: 1},
-			Value:          []byte("test-message"),
-		},
-	}
+	fakeConsumer := newFakeKafkaConsumer()
+	defer fakeConsumer.Close()
 
-	params := ConsumerParams{
-		Name:     "test-consumer",
-		PollFunc: pollFunc,
-	}
-
-	consumer := newConsumer(ctx, params)
-	assert.NotNil(t, consumer)
+	consumer := newConsumer(ctx, ConsumerParams{
+		Name: "test-consumer",
+	})
+	consumer.kafkaConsumer = fakeConsumer
 
 	msgChan, err := consumer.Poll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
+
+	// Simulate a single message flowing through the stub client.
+	topic := "test-topic"
+	fakeConsumer.enqueue(&kafka.Message{
+		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: 0, Offset: 1},
+		Value:          []byte("test-message"),
+	})
 
 	select {
 	case msgs := <-msgChan:
-		t.Logf("received messages: %v", msgs)
 		assert.Equal(t, 1, len(msgs))
 	case <-ctx.Done():
 		t.Fatal("timeout sending message to msgChan")
