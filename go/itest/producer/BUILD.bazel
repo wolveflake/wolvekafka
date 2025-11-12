@@ -1,0 +1,13 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "producer_test",
+    srcs = ["producer_integration_test.go"],
+    deps = [
+        "//go/itest/fixture",
+        "//go/kafka",
+        "//proto/configs",
+        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
+        "@com_github_stretchr_testify//require",
+    ],
+)
