@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "wks_e2e_test",
+    srcs = ["wks_e2e_integration_test.go"],
+    deps = [
+        "//go/configs",
+        "//go/itest/fixture",
+        "//go/kafka",
+        "//go/wks",
+        "//proto/configs",
+        "//proto/model",
+        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)
