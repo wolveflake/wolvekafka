@@ -15,7 +15,6 @@ import (
 
 	"wolvekafka/go/configs"
 	kafka_fixture "wolvekafka/go/itest/fixture"
-	kafka_pkg "wolvekafka/go/kafka"
 	"wolvekafka/go/wks"
 	configs_pb "wolvekafka/proto/configs"
 	model_pb "wolvekafka/proto/model"
@@ -70,6 +69,7 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	defer lambdaServer.Close()
 
 	topic := fmt.Sprintf("wks-e2e-topic-%d", time.Now().UnixNano())
+	groupID := fmt.Sprintf("wks-e2e-group-%d", time.Now().UnixNano())
 
 	cfgProto := &configs_pb.Config{
 		Cluster: &configs_pb.Cluster{
@@ -77,7 +77,7 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 		},
 		Consumers: []*configs_pb.Consumer{
 			{
-				GroupId: fmt.Sprintf("wks-e2e-group-%d", time.Now().UnixNano()),
+				GroupId: groupID,
 				Topics:  []string{topic},
 				Lambdas: []*configs_pb.Lambda{
 					{Url: lambdaServer.URL},
@@ -93,23 +93,36 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, service)
 
-	producer, err := kafka_pkg.NewProducer(ctx, kafka_pkg.ProducerParams{
-		Name:    fmt.Sprintf("wks-e2e-producer-%d", time.Now().UnixNano()),
-		Cluster: cfgProto.Cluster,
+	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
+		"bootstrap.servers": fixture.BootstrapHost(),
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		require.NoError(t, producer.Close())
+		producer.Close()
 	})
 
 	messageValue := []byte("wks end-to-end payload")
-	require.NoError(t, producer.Produce(ctx, &ckafka.Message{
+	deliveryChan := make(chan ckafka.Event, 1)
+	require.NoError(t, producer.Produce(&ckafka.Message{
 		TopicPartition: ckafka.TopicPartition{
 			Topic:     &topic,
 			Partition: ckafka.PartitionAny,
 		},
 		Value: messageValue,
-	}))
+	}, deliveryChan))
+
+	var producedPartition int32
+	var producedOffset ckafka.Offset
+	select {
+	case ev := <-deliveryChan:
+		msg, ok := ev.(*ckafka.Message)
+		require.True(t, ok, "unexpected delivery event type %T", ev)
+		require.NoError(t, msg.TopicPartition.Error)
+		producedPartition = msg.TopicPartition.Partition
+		producedOffset = msg.TopicPartition.Offset
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for delivery report")
+	}
 
 	select {
 	case req := <-lambdaReqCh:
@@ -120,4 +133,29 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	case <-time.After(45 * time.Second):
 		t.Fatal("timed out waiting for lambda invocation")
 	}
+
+	commitVerifier, err := ckafka.NewConsumer(&ckafka.ConfigMap{
+		"bootstrap.servers": fixture.BootstrapHost(),
+		"group.id":          groupID,
+		"auto.offset.reset": "earliest",
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = commitVerifier.Close()
+	})
+
+	require.Eventually(t, func() bool {
+		partitions, err := commitVerifier.Committed([]ckafka.TopicPartition{{
+			Topic:     &topic,
+			Partition: producedPartition,
+		}}, 10_000)
+		if err != nil {
+			t.Logf("Committed() error: %v", err)
+			return false
+		}
+		if len(partitions) == 0 {
+			return false
+		}
+		return partitions[0].Offset == producedOffset+1
+	}, 15*time.Second, 500*time.Millisecond, "expected committed offset to advance")
 }

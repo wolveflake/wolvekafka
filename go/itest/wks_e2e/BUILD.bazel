@@ -6,7 +6,6 @@ go_test(
     deps = [
         "//go/configs",
         "//go/itest/fixture",
-        "//go/kafka",
         "//go/wks",
         "//proto/configs",
         "//proto/model",
