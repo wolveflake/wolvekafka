@@ -126,7 +126,7 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	return &Consumer{
 		ctx:               ctx,
 		name:              params.Name,
-		poolDurationMs:    defaultPoolDurationMs,
+		poolDurationMs:    int(poolDurationMs),
 		log:               log,
 		pollFunc:          params.PollFunc,
 		commitMessageFunc: params.CommitMessageFunc,
@@ -139,7 +139,46 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 		return c.pollFunc()
 	}
 
-	return nil, fmt.Errorf("not implemented")
+	if c.kafkaConsumer == nil {
+		return nil, fmt.Errorf("kafka consumer is not initialized")
+	}
+
+	msgChan := make(chan []*Message, 1)
+
+	go func() {
+		defer close(msgChan)
+
+		for {
+			select {
+			case <-c.ctx.Done():
+				return
+			default:
+			}
+
+			event := c.kafkaConsumer.Poll(c.poolDurationMs)
+			if event == nil {
+				continue
+			}
+
+			switch e := event.(type) {
+			case *kafka.Message:
+				select {
+				case <-c.ctx.Done():
+					return
+				case msgChan <- []*Message{e}:
+				}
+			case kafka.Error:
+				c.log.Errorf("Kafka poll error: %v", e)
+				if e.Code() == kafka.ErrAllBrokersDown {
+					return
+				}
+			default:
+				// ignore other events
+			}
+		}
+	}()
+
+	return msgChan, nil
 }
 
 // Close closes the Kafka consumer.
