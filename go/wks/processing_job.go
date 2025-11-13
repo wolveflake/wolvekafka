@@ -23,9 +23,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"wolvekafka/go/kafka"
@@ -57,6 +60,8 @@ type ProcessingJob struct {
 	consumerName string
 	jobId        int
 
+	metrics *instrumentation
+
 	// consumers map for dynamic reconfiguration.
 	consumers atomic.Value // map[string]*consumerRef
 
@@ -78,6 +83,8 @@ type ProcessingJob struct {
 
 	// lambda response msg handler.
 	outputPolicy *OutputPolicy
+
+	shutdownOnce sync.Once
 }
 
 func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
@@ -164,6 +171,9 @@ func (c *ProcessingJob) executeWithRetry(
 			c.log.Warnf("[%v:%v] retrying message batch attempt %d/%d after %v", c.consumerName, c.jobId, attempt, totalAttempts, backoff)
 		} else {
 			c.log.Warnf("[%v:%v] retrying message batch attempt %d/%d", c.consumerName, c.jobId, attempt, totalAttempts)
+		}
+		if c.metrics != nil {
+			c.metrics.recordLambdaRetry(ctx, c.consumerName, c.jobId, attempt, lastErr)
 		}
 
 		lambdaResponse, lastErr = fn(ctx)
@@ -265,6 +275,10 @@ func (c *ProcessingJob) createKafkaConsumer(consumerParams kafka.ConsumerParams)
 func (c *ProcessingJob) Execute() {
 	c.log.Infof("[%v:%v] starting consumer job...", c.consumerName, c.jobId)
 
+	if c.metrics != nil {
+		c.metrics.jobStarted(c.ctx, c.consumerName, c.jobId)
+	}
+
 	defer c.done()
 
 	c.lambdaSelector = NewLambdaSelector(c.consumerCfg.GetLambdas())
@@ -325,32 +339,74 @@ func (c *ProcessingJob) Execute() {
 
 			// convert kafka messages to lambda request.
 			lambdaReq := kafkaMsgsToLambdaRequest(msgs)
-
-			lambdaResp, err := c.sendEventFunc(c, sendCtx, lambdaReq)
-			c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
-			if err != nil {
-				continue
+			batchBytes := approximateBatchBytes(msgs)
+			processCtx := sendCtx
+			span := trace.SpanFromContext(processCtx)
+			if c.metrics != nil {
+				processCtx, span = c.metrics.startBatchSpan(sendCtx, c.consumerName, c.jobId, len(msgs), batchBytes)
 			}
 
-			// process lambda response.
-			if lambdaResp != nil {
-				err = c.outputPolicy.Process(sendCtx, lambdaReq, lambdaResp)
-				if err != nil {
-					c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
+			func(ctx context.Context, span trace.Span) {
+				defer span.End()
+
+				if c.metrics != nil {
+					c.metrics.recordBatch(ctx, c.consumerName, c.jobId, len(msgs), batchBytes)
 				}
-			}
 
-			// You can process the message here
-			// For automatic offset committing, no explicit commit is needed here with "enable.auto.commit": "true"
-			// For manual offset committing, you would use consumer.CommitMessage(e)
-			for _, msg := range msgs {
-				_, err := c.kafkaConsumer.CommitMessage(msg)
-				if err != nil {
-					c.log.Errorf("[%v:%v] error committing message offset: %v", c.consumerName, c.jobId, err)
-				} else {
-					c.log.Infof("[%v:%v] committed message offset: %v", c.consumerName, c.jobId, msg.TopicPartition.Offset)
+				start := time.Now()
+				lambdaResp, err := c.sendEventFunc(c, ctx, lambdaReq)
+				dur := time.Since(start)
+				c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
+				if c.metrics != nil {
+					c.metrics.recordLambdaResult(ctx, c.consumerName, c.jobId, dur, err)
 				}
-			}
+				if err != nil {
+					span.RecordError(err)
+					span.SetStatus(codes.Error, err.Error())
+					return
+				}
+
+				var batchErr error
+
+				// process lambda response.
+				if lambdaResp != nil {
+					if err := c.outputPolicy.Process(ctx, lambdaReq, lambdaResp); err != nil {
+						batchErr = err
+						if c.metrics != nil {
+							c.metrics.recordOutputError(ctx, c.consumerName, c.jobId, err)
+						}
+						c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
+						span.RecordError(err)
+					}
+				}
+
+				successfulCommits := 0
+				for _, msg := range msgs {
+					_, err := c.kafkaConsumer.CommitMessage(msg)
+					if err != nil {
+						batchErr = err
+						if c.metrics != nil {
+							c.metrics.recordCommitError(ctx, c.consumerName, c.jobId, err)
+						}
+						c.log.Errorf("[%v:%v] error committing message offset: %v", c.consumerName, c.jobId, err)
+						span.RecordError(err)
+					} else {
+						successfulCommits++
+						c.log.Infof("[%v:%v] committed message offset: %v", c.consumerName, c.jobId, msg.TopicPartition.Offset)
+					}
+				}
+
+				if successfulCommits > 0 && c.metrics != nil {
+					c.metrics.recordMessagesProcessed(ctx, c.consumerName, c.jobId, successfulCommits)
+				}
+
+				if batchErr != nil {
+					span.SetStatus(codes.Error, batchErr.Error())
+					return
+				}
+
+				span.SetStatus(codes.Ok, "processed")
+			}(processCtx, span)
 		}
 	}
 }
@@ -360,21 +416,42 @@ func (c *ProcessingJob) Cancel() {
 }
 
 func (c *ProcessingJob) done() {
-	c.log.Infof("[%v:%v] consumer job has been stopped", c.consumerName, c.jobId)
+	c.shutdownOnce.Do(func() {
+		c.log.Infof("[%v:%v] consumer job has been stopped", c.consumerName, c.jobId)
 
-	// cancel job context.
-	c.ctxCancel()
+		// cancel job context.
+		c.ctxCancel()
 
-	err := c.kafkaConsumer.Close()
-	if err != nil {
-		c.log.Errorf("[%v:%v] error closing consumer: %v", c.consumerName, c.jobId, err)
-	}
+		if c.metrics != nil {
+			c.metrics.jobFinished(c.ctx, c.consumerName, c.jobId)
+		}
 
-	if c.outputPolicy != nil {
-		if err := c.outputPolicy.Close(); err != nil {
-			c.log.Errorf("[%v:%v] error closing output policy: %v", c.consumerName, c.jobId, err)
+		if c.kafkaConsumer != nil {
+			if err := c.kafkaConsumer.Close(); err != nil {
+				c.log.Errorf("[%v:%v] error closing consumer: %v", c.consumerName, c.jobId, err)
+			}
+		}
+
+		if c.outputPolicy != nil {
+			if err := c.outputPolicy.Close(); err != nil {
+				c.log.Errorf("[%v:%v] error closing output policy: %v", c.consumerName, c.jobId, err)
+			}
+		}
+	})
+}
+
+func approximateBatchBytes(msgs []*kafka.Message) int64 {
+	var total int64
+	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
+		total += int64(len(msg.Value) + len(msg.Key))
+		for _, header := range msg.Headers {
+			total += int64(len(header.Key) + len(header.Value))
 		}
 	}
+	return total
 }
 
 func (c *ProcessingJob) ensureOutputProducer() error {
