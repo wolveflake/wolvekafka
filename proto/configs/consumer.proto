@@ -61,6 +61,15 @@ message Lambda {
 message BatchConsumer {
   // number of messages to process in a single batch.
   uint32 batch_size = 1;
+
+  // Maximum number of messages emitted by a batch before flushing.
+  uint32 max_messages = 2;
+
+  // Maximum total size (in bytes) accumulated in a batch before flushing.
+  uint32 max_bytes = 3;
+
+  // Maximum amount of time, in milliseconds, to wait before flushing a partial batch.
+  uint32 max_wait_ms = 4;
 }
 
 message ParallelConsumer {
