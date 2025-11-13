@@ -296,6 +296,17 @@ func (c *ProcessingJob) Execute() {
 		PoolDuration: time.Millisecond * 500,
 		Topics:       c.consumerCfg.GetTopics(),
 	}
+	if batchCfg := c.consumerCfg.GetBatch(); batchCfg != nil {
+		if v := batchCfg.GetMaxMessages(); v > 0 {
+			consumerParams.BatchMaxMessages = int(v)
+		}
+		if v := batchCfg.GetMaxBytes(); v > 0 {
+			consumerParams.BatchMaxBytes = int(v)
+		}
+		if v := batchCfg.GetMaxWaitMs(); v > 0 {
+			consumerParams.BatchMaxWait = time.Duration(v) * time.Millisecond
+		}
+	}
 	kafkaConsumer, err := c.createKafkaConsumer(consumerParams)
 	if err != nil {
 		c.log.Errorf("[%v:%v] failed to create kafka consumer: %v", c.consumerName, c.jobId, err)
