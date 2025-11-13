@@ -43,6 +43,8 @@ type WolveKafkaService struct {
 	// logger.
 	log *zap.SugaredLogger
 
+	metrics *instrumentation
+
 	mu        sync.Mutex   // one config update at a time.
 	consumers atomic.Value // map[string]*consumerRef
 
@@ -68,6 +70,7 @@ type consumerRef struct {
 // NewWolveKafkaService creates a new WKS service instance.
 func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveKafkaService, error) {
 	srvCtx, cancelFunc := context.WithCancel(ctx)
+	metrics := getInstrumentation()
 
 	// set default functions if not provided.
 	newConsumerFunc := kafka.NewConsumer
@@ -85,6 +88,7 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 		ctxCancel:       cancelFunc,
 		log:             logger.S(),
 		params:          &params,
+		metrics:         metrics,
 		newConsumerFunc: newConsumerFunc,
 		sendEventFunc:   sendEventFunc,
 	}
@@ -100,6 +104,15 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if config == nil {
+		w.log.Warn("received nil config; skipping update")
+		return
+	}
+
+	if w.metrics != nil {
+		w.metrics.recordConfigApplied(w.ctx, len(config.Consumers()))
+	}
 
 	currentConsumers := w.consumers.Load().(map[string]*consumerRef)
 	newConsumers := make(map[string]*consumerRef)
@@ -148,9 +161,13 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					}),
 
 					newConsumerFunc: w.newConsumerFunc,
+					metrics:         w.metrics,
 				}
 				workPool.Process(job)
 				jobs[idx] = job
+			}
+			if w.metrics != nil {
+				w.metrics.recordConsumerLifecycle(w.ctx, consumerName, 1)
 			}
 			newConsumers[consumerName] = &consumerRef{
 				jobs:     jobs,
@@ -162,6 +179,9 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	// Shutdown removed consumers.
 	for consumerName, exec := range currentConsumers {
 		w.log.Infof("stopping consumer: %s, jobs count: %v", consumerName, len(exec.jobs))
+		if w.metrics != nil {
+			w.metrics.recordConsumerLifecycle(w.ctx, consumerName, -1)
+		}
 		w.stopProcessingJobs(exec)
 		exec.executor.Configure(executor.WorkPoolExecutorParams{
 			NumWorkers: 0,

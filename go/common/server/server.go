@@ -19,7 +19,6 @@ package server
 
 import (
 	"context"
-	errors2 "errors"
 	"flag"
 	"fmt"
 	"io"
@@ -102,6 +101,7 @@ type Server struct {
 	log          *zap.SugaredLogger
 	grpcListener net.Listener
 	grpcPort     int
+	otelShutdown func(context.Context) error
 
 	// http server related configuration
 	httpPort     int
@@ -138,10 +138,6 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Handle shutdown properly so nothing leaks.
-	defer func() {
-		err = errors2.Join(err, otelShutdown(context.Background()))
-	}()
 
 	ctxSrv, ctxSrvCancel := context.WithCancel(ctx)
 	srv := &Server{
@@ -156,6 +152,7 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 		httpListener: httpListener,
 		httpPort:     httpListenerPort,
 		sigChan:      sigChan,
+		otelShutdown: otelShutdown,
 	}
 
 	srv.GRPCServer = grpc.NewServer()
@@ -221,8 +218,33 @@ func (s *Server) AddShutdownHook(closers ...io.Closer) {
 	_ = logger.S().Sync()
 }
 func (s *Server) Stop() {
-	s.GRPCServer.Stop()
-	_ = s.HTTPServer.Close()
+	if s == nil {
+		return
+	}
+	s.ctxCancel()
+	if s.GRPCServer != nil {
+		s.GRPCServer.Stop()
+	}
+	if s.HTTPServer != nil {
+		_ = s.HTTPServer.Close()
+	}
+	s.shutdownTelemetry()
+}
+
+func (s *Server) shutdownTelemetry() {
+	if s == nil || s.otelShutdown == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.otelShutdown(ctx); err != nil {
+		log := s.log
+		if log == nil {
+			log = logger.S()
+		}
+		log.Warnf("failed to shut down OpenTelemetry: %v", err)
+	}
+	s.otelShutdown = nil
 }
 func (s *Server) monitorStopSignal(listener net.Listener) {
 	select {
@@ -318,6 +340,7 @@ func (s *Server) grpcServe() error {
 
 // Serve accepts incoming connections (blocking call).
 func (s *Server) Serve() error {
+	defer s.shutdownTelemetry()
 	go func() {
 		s.grpcServe()
 	}()
