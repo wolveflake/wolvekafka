@@ -1,0 +1,15 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "wks.fullname" . }}
+  labels:
+    {{- include "wks.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "wks.selectorLabels" . | nindent 6 }}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- end }}
+{{- end }}

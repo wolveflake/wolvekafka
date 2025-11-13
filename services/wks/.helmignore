@@ -1,0 +1,9 @@
+# Common Helm ignores
+.DS_Store
+.git/
+.gitignore
+.bazel*
+Thumbs.db
+*/__pycache__/*
+*.swp
+*.tmp
