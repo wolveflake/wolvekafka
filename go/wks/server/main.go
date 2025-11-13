@@ -18,10 +18,22 @@
 package main
 
 import (
+	"context"
 	"flag"
+
+	"wolvekafka/go/common/logger"
+	server "wolvekafka/go/common/server"
+)
+
+var (
+	serviceID = flag.String("service_id", "wolvekafka", "Unique service identifier used for registration and logs.")
 )
 
 func main() {
 	flag.Parse()
 
+	srv := server.SetUpServer(context.Background(), server.PROTO_GRPC, *serviceID)
+	if err := srv.Serve(); err != nil {
+		logger.S().Fatalf("server stopped: %v", err)
+	}
 }

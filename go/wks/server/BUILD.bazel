@@ -1,14 +1,55 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 
 go_library(
     name = "server_lib",
     srcs = ["main.go"],
     importpath = "wolvekafka/go/wks/server",
     visibility = ["//visibility:private"],
+    deps = [
+        "//go/common/logger",
+        "//go/common/server",
+    ],
 )
 
 go_binary(
     name = "server",
     embed = [":server_lib"],
     visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "server_rootfs_files",
+    srcs = [":server"],
+    strip_prefix = strip_prefix.files_only(),
+    visibility = ["//visibility:private"],
+)
+
+pkg_tar(
+    name = "server_rootfs",
+    srcs = [":server_rootfs_files"],
+    out = "server_rootfs.tar",
+    visibility = ["//visibility:private"],
+)
+
+# Build the image
+oci_image(
+    name = "image",
+    base = "@ubuntu//:ubuntu",
+    # Entrypoint
+    entrypoint = ["/server"],
+    # Layers to add to the base image
+    tars = [":server_rootfs"],
+    visibility = ["//visibility:public"],
+)
+
+# Push the image
+oci_push(
+    name = "image_push",
+    image = ":image",
+    # tag(s) as a list
+    remote_tags = ["latest"],
+    repository = "registry.digitalocean.com/wolvekafka/wks",
 )
