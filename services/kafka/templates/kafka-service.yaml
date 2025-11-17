@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka-demo.kafkaServiceName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: {{ .Values.kafka.service.type }}
+  {{- if and (eq .Values.kafka.service.type "NodePort") .Values.kafka.service.nodePort }}
+  externalTrafficPolicy: Cluster
+  {{- end }}
+  ports:
+    - name: client
+      port: {{ .Values.kafka.service.port }}
+      targetPort: broker
+      protocol: TCP
+      {{- if and (eq .Values.kafka.service.type "NodePort") .Values.kafka.service.nodePort }}
+      nodePort: {{ .Values.kafka.service.nodePort }}
+      {{- end }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: kafka

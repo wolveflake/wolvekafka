@@ -1,0 +1,19 @@
+{{- if .Values.kafka.service.external.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-ext" (include "kafka-demo.kafkaServiceName" .) }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  type: {{ .Values.kafka.service.external.type }}
+  ports:
+    - name: external
+      port: {{ .Values.kafka.service.external.port }}
+      targetPort: broker
+      protocol: TCP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: kafka
+{{- end }}
