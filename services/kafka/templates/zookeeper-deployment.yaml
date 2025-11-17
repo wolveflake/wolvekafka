@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kafka-demo.zookeeperServiceName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  replicas: {{ .Values.zookeeper.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: zookeeper
+  template:
+    metadata:
+      labels:
+        {{- include "kafka-demo.labels" . | nindent 8 }}
+        app.kubernetes.io/component: zookeeper
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: zookeeper
+          image: "{{ .Values.image.zookeeper.repository }}:{{ .Values.image.zookeeper.tag }}"
+          imagePullPolicy: {{ .Values.image.zookeeper.pullPolicy }}
+          ports:
+            - name: client
+              containerPort: {{ .Values.zookeeper.servicePort }}
+          env:
+            - name: ZOO_CLIENT_PORT
+              value: "{{ .Values.zookeeper.servicePort }}"
+            - name: ZOO_TICK_TIME
+              value: "{{ .Values.zookeeper.tickTime }}"
+            - name: ZOO_INIT_LIMIT
+              value: "{{ .Values.zookeeper.initLimit }}"
+            - name: ZOO_SYNC_LIMIT
+              value: "{{ .Values.zookeeper.syncLimit }}"
+            - name: ALLOW_ANONYMOUS_LOGIN
+              value: "yes"
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "zookeeper-shell localhost:{{ .Values.zookeeper.servicePort }} ls / >/dev/null"
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: client
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.zookeeper.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /bitnami/zookeeper
+              name: zookeeper-data
+      volumes:
+        - name: zookeeper-data
+          {{- if .Values.zookeeper.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "kafka-demo.zookeeperServiceName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.zookeeper.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.zookeeper.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.zookeeper.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

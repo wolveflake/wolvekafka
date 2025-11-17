@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafka-demo.kafkaHeadlessServiceName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: internal
+      port: {{ .Values.kafka.service.port }}
+      targetPort: broker
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: kafka

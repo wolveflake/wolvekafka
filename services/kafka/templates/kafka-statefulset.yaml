@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "kafka-demo.kafkaServiceName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka
+spec:
+  serviceName: {{ include "kafka-demo.kafkaHeadlessServiceName" . }}
+  replicas: {{ .Values.kafka.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: kafka
+  template:
+    metadata:
+      labels:
+        {{- include "kafka-demo.labels" . | nindent 8 }}
+        app.kubernetes.io/component: kafka
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kafka
+          image: "{{ .Values.image.kafka.repository }}:{{ .Values.image.kafka.tag }}"
+          imagePullPolicy: {{ .Values.image.kafka.pullPolicy }}
+          ports:
+            - name: broker
+              containerPort: {{ .Values.kafka.service.port }}
+          env:
+            - name: KAFKA_CFG_ZOOKEEPER_CONNECT
+              value: {{ printf "%s:%d" (include "kafka-demo.zookeeperServiceName" .) .Values.zookeeper.servicePort | quote }}
+            - name: KAFKA_CFG_LISTENERS
+              value: {{ printf "PLAINTEXT://:%d" .Values.kafka.service.port | quote }}
+            - name: KAFKA_CFG_ADVERTISED_LISTENERS
+              value: {{ printf "PLAINTEXT://%s:%d" (include "kafka-demo.kafkaServiceName" .) .Values.kafka.service.port | quote }}
+            - name: KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP
+              value: "PLAINTEXT:PLAINTEXT"
+            - name: KAFKA_CFG_INTER_BROKER_LISTENER_NAME
+              value: "PLAINTEXT"
+            - name: KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "{{ .Values.kafka.config.offsetsTopicReplicationFactor }}"
+            - name: KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "{{ .Values.kafka.config.transactionStateLogReplicationFactor }}"
+            - name: KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "{{ .Values.kafka.config.transactionStateLogMinIsr }}"
+            - name: KAFKA_CFG_DEFAULT_REPLICATION_FACTOR
+              value: "{{ .Values.kafka.config.defaultReplicationFactor }}"
+            - name: KAFKA_HEAP_OPTS
+              value: {{ .Values.kafka.heapOpts | quote }}
+            - name: ALLOW_PLAINTEXT_LISTENER
+              value: "yes"
+          readinessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: broker
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.kafka.resources | nindent 12 }}
+          volumeMounts:
+            - name: kafka-data
+              mountPath: /bitnami/kafka
+      {{- if not .Values.kafka.persistence.enabled }}
+      volumes:
+        - name: kafka-data
+          emptyDir: {}
+      {{- end }}
+      {{- with .Values.kafka.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kafka.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kafka.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.kafka.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: kafka-data
+      spec:
+        accessModes:
+          {{- toYaml .Values.kafka.persistence.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: {{ .Values.kafka.persistence.size }}
+        {{- if .Values.kafka.persistence.storageClass }}
+        storageClassName: {{ .Values.kafka.persistence.storageClass | quote }}
+        {{- else if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass | quote }}
+        {{- end }}
+  {{- end }}

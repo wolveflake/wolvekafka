@@ -1,0 +1,20 @@
+{{- if .Values.zookeeper.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kafka-demo.zookeeperServiceName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  accessModes:
+    {{- toYaml .Values.zookeeper.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.zookeeper.persistence.size }}
+  {{- if .Values.zookeeper.persistence.storageClass }}
+  storageClassName: {{ .Values.zookeeper.persistence.storageClass | quote }}
+  {{- else if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass | quote }}
+  {{- end }}
+{{- end }}
