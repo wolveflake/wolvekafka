@@ -1,0 +1,38 @@
+{{- if .Values.kafkaShell.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "kafka-demo.fullname" . }}-shell
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-shell
+spec:
+  {{- with .Values.global.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  restartPolicy: Always
+  containers:
+    - name: kafka-shell
+      image: "{{ .Values.kafkaShell.image.repository }}:{{ .Values.kafkaShell.image.tag }}"
+      imagePullPolicy: {{ .Values.kafkaShell.image.pullPolicy }}
+      command:
+        {{- toYaml .Values.kafkaShell.command | nindent 8 }}
+      env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: {{ printf "%s:%d" (include "kafka-demo.kafkaServiceName" .) (int .Values.kafka.service.port) | quote }}
+      resources:
+        {{- toYaml .Values.kafkaShell.resources | nindent 8 }}
+  {{- with .Values.kafkaShell.nodeSelector }}
+  nodeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.kafkaShell.tolerations }}
+  tolerations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.kafkaShell.affinity }}
+  affinity:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
