@@ -4,7 +4,7 @@ This chart deploys the `go/wks/server` binary (packaged into the OCI image built
 
 ## Prerequisites
 
-- The container image `registry.digitalocean.com/wolvekafka/wks:<tag>` is available and the cluster can pull from the registry (create an image pull secret if needed).
+- The container image `registry.digitalocean.com/wolveflake/wks:<tag>` is available and the cluster can pull from the registry (create an image pull secret if needed).
 - `helm` 3.10+ installed locally.
 - Access to the desired DigitalOcean Kubernetes context (`kubectl config use-context <do-cluster>`).
 
@@ -17,6 +17,7 @@ bazel run //go/wks/server:image_push -- --tag <tag>
 # Install / upgrade the chart
 helm upgrade --install wks ./services/wks \
   --namespace wks --create-namespace \
+  --set image.repository=registry.digitalocean.com/wolveflake/wks \
   --set image.tag=<tag>
 ```
 
@@ -25,7 +26,7 @@ helm upgrade --install wks ./services/wks \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of pods (ignored when autoscaling enabled) | `1` |
-| `image.repository` | OCI repository for the server image | `registry.digitalocean.com/wolvekafka/wks` |
+| `image.repository` | OCI repository for the server image | `registry.digitalocean.com/wolveflake/wks` |
 | `image.tag` | Image tag | `latest` |
 | `image.pullSecrets` | List of image pull secrets | `[]` |
 | `service.type` | Kubernetes service type | `ClusterIP` |

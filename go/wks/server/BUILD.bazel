@@ -51,5 +51,5 @@ oci_push(
     image = ":image",
     # tag(s) as a list
     remote_tags = ["latest"],
-    repository = "registry.digitalocean.com/wolvekafka/wks",
+    repository = "registry.digitalocean.com/wolveflake/wks",
 )
