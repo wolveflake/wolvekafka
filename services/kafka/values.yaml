@@ -8,17 +8,41 @@ global:
 
 image:
   kafka:
-    repository: bitnami/kafka
-    tag: 3.6.1-debian-11-r13
+    repository: confluentinc/cp-kafka
+    tag: 7.6.1
     pullPolicy: IfNotPresent
   zookeeper:
-    repository: bitnami/zookeeper
-    tag: 3.9.1-debian-11-r18
+    repository: confluentinc/cp-zookeeper
+    tag: 7.6.1
     pullPolicy: IfNotPresent
+kafkaShell:
+  enabled: true
+  image:
+    repository: confluentinc/cp-kafka
+    tag: 7.6.1
+    pullPolicy: IfNotPresent
+  command:
+    - "/bin/bash"
+    - "-c"
+    - "trap : TERM INT; sleep infinity & wait"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
 
 kafka:
   replicaCount: 1
   heapOpts: "-Xmx512m -Xms512m"
+  dataDir: /bitnami/kafka
+  dataSubPath: data
+  podSecurityContext:
+    fsGroup: 1000
   service:
     type: ClusterIP
     port: 9092
@@ -51,6 +75,10 @@ kafka:
 
 zookeeper:
   replicaCount: 1
+  dataDir: /bitnami/zookeeper
+  dataSubPath: data
+  podSecurityContext:
+    fsGroup: 1000
   servicePort: 2181
   tickTime: 2000
   initLimit: 10

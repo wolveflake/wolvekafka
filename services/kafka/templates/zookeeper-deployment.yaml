@@ -25,6 +25,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.zookeeper.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: zookeeper
           image: "{{ .Values.image.zookeeper.repository }}:{{ .Values.image.zookeeper.tag }}"
@@ -35,20 +39,31 @@ spec:
           env:
             - name: ZOO_CLIENT_PORT
               value: "{{ .Values.zookeeper.servicePort }}"
+            - name: ZOOKEEPER_CLIENT_PORT
+              value: "{{ .Values.zookeeper.servicePort }}"
             - name: ZOO_TICK_TIME
+              value: "{{ .Values.zookeeper.tickTime }}"
+            - name: ZOOKEEPER_TICK_TIME
               value: "{{ .Values.zookeeper.tickTime }}"
             - name: ZOO_INIT_LIMIT
               value: "{{ .Values.zookeeper.initLimit }}"
+            - name: ZOOKEEPER_INIT_LIMIT
+              value: "{{ .Values.zookeeper.initLimit }}"
             - name: ZOO_SYNC_LIMIT
               value: "{{ .Values.zookeeper.syncLimit }}"
+            - name: ZOOKEEPER_SYNC_LIMIT
+              value: "{{ .Values.zookeeper.syncLimit }}"
+            - name: ZOO_DATA_DIR
+              value: {{ .Values.zookeeper.dataDir | quote }}
+            - name: ZOOKEEPER_DATA_DIR
+              value: {{ .Values.zookeeper.dataDir | quote }}
+            - name: ZOOKEEPER_SERVER_ID
+              value: "1"
             - name: ALLOW_ANONYMOUS_LOGIN
               value: "yes"
           readinessProbe:
-            exec:
-              command:
-                - sh
-                - -c
-                - "zookeeper-shell localhost:{{ .Values.zookeeper.servicePort }} ls / >/dev/null"
+            tcpSocket:
+              port: client
             initialDelaySeconds: 10
             periodSeconds: 15
           livenessProbe:
@@ -59,8 +74,11 @@ spec:
           resources:
             {{- toYaml .Values.zookeeper.resources | nindent 12 }}
           volumeMounts:
-            - mountPath: /bitnami/zookeeper
+            - mountPath: {{ .Values.zookeeper.dataDir | quote }}
               name: zookeeper-data
+              {{- if .Values.zookeeper.dataSubPath }}
+              subPath: {{ .Values.zookeeper.dataSubPath | quote }}
+              {{- end }}
       volumes:
         - name: zookeeper-data
           {{- if .Values.zookeeper.persistence.enabled }}
