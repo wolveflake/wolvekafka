@@ -1,8 +1,11 @@
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//go/wks/server:oci_push_do.bzl", "oci_push_do")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
+
+exports_files(["do_push.sh.tpl"])
 
 go_library(
     name = "server_lib",
@@ -50,7 +53,7 @@ oci_image(
 # binaries (crane/jq) chosen by rules_oci remain executable on macOS. The actual
 # container layers are transitioned to Linux via the filegroups defined below, so
 # no --platforms flag is required when running these targets.
-oci_push(
+oci_push_do(
     name = "image_push",
     image = ":transitioned_image_linux_amd64",
     # tag(s) as a list
@@ -58,7 +61,7 @@ oci_push(
     repository = "registry.digitalocean.com/wolveflake/wks",
 )
 
-oci_push(
+oci_push_do(
     name = "image_push_arm64",
     image = ":transitioned_image_linux_arm64",
     # tag(s) as a list
