@@ -2,6 +2,7 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
+load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 
 go_library(
     name = "server_lib",
@@ -48,8 +49,18 @@ oci_image(
 # Push the image
 oci_push(
     name = "image_push",
-    image = ":image",
+    image = ":transitioned_image",
     # tag(s) as a list
     remote_tags = ["latest"],
     repository = "registry.digitalocean.com/wolveflake/wks",
+)
+
+# This is the target that should be released to the target platform
+platform_transition_filegroup(
+    name = "transitioned_image",
+    srcs = [":image"],
+    target_platform = select({
+        "@platforms//cpu:x86_64": "@rules_go//go/toolchain:linux_amd64",
+        "@platforms//cpu:arm64": "@rules_go//go/toolchain:linux_arm64",
+    }),
 )
