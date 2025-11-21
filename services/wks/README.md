@@ -4,31 +4,18 @@ This chart deploys the `go/wks/server` binary (packaged into the OCI image built
 
 ## Prerequisites
 
-- The container image `registry.digitalocean.com/wolveflake/wks:<tag>` is available and the cluster can pull from the registry (create an image pull secret if needed).
+- The container image `ghcr.io/wolveflake/wks:<tag>` is available and the cluster can pull from the registry (create an image pull secret if needed).
 - `helm` 3.10+ installed locally.
 - Access to the desired DigitalOcean Kubernetes context (`kubectl config use-context <do-cluster>`).
-
-## Usage
-
-```bash
-# Package the container image first
-bazel run //go/wks/server:image_push -- --tag <tag>
-
-# Install / upgrade the chart
-helm upgrade --install wks ./services/wks \
-  --namespace wks --create-namespace \
-  --set image.repository=registry.digitalocean.com/wolveflake/wks \
-  --set image.tag=<tag>
-```
 
 ## Configuration
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of pods (ignored when autoscaling enabled) | `1` |
-| `image.repository` | OCI repository for the server image | `registry.digitalocean.com/wolveflake/wks` |
+| `image.repository` | OCI repository for the server image | `ghcr.io/wolveflake/wks` |
 | `image.tag` | Image tag | `latest` |
-| `image.pullSecrets` | List of image pull secrets | `[]` |
+| `image.pullSecrets` | List of image pull secrets | `[demo-regcred]` |
 | `service.type` | Kubernetes service type | `ClusterIP` |
 | `service.port` | Service port | `8080` |
 | `ingress.enabled` | Enable ingress | `false` |
@@ -38,19 +25,50 @@ helm upgrade --install wks ./services/wks \
 
 Refer to `values.yaml` for the full list of configurable settings (ingress, probes, PDB, volume mounts, etc.).
 
-## DigitalOcean Registry Auth
+## End-to-End Deployment Flow
 
-If the cluster must pull from a private DigitalOcean registry, create a secret:
+1. **Prepare GHCR Docker config** (rerun when the PAT changes):
+   ```bash
+   DOCKER_GHCR_CONFIG=${DOCKER_GHCR_CONFIG:-/tmp/docker-ghcr}
+   ./services/wks/setup-ghcr-config.sh <ghcr-personal-access-token> <github-username>
+   export DOCKER_CONFIG=$DOCKER_GHCR_CONFIG
+   ```
 
-```bash
-doctl registry kubernetes-manifest | kubectl apply -f -
-kubectl create secret docker-registry do-registry \
-  --docker-server=registry.digitalocean.com \
-  --docker-username=<token> --docker-password=<token> \
-  --namespace wks
-```
+2. **Build & push the image** (publishes `ghcr.io/wolveflake/wks:<tag>`):
+   ```bash
+   bazel run //go/wks/server:image_push_ghcr -- --tag <tag>
+   ```
 
-Then set `image.pullSecrets[0].name=do-registry` when installing the chart.
+3. **Create / update the cluster pull secret** in each namespace (delete first if it exists):
+   ```bash
+   kubectl delete secret demo-regcred -n wks-demo --ignore-not-found
+   kubectl create secret docker-registry demo-regcred \
+     --namespace wks-demo \
+     --docker-server=ghcr.io \
+     --docker-username=<github-username> \
+     --docker-password=<ghcr-personal-access-token>
+   ```
+
+4. **Install / upgrade (or uninstall) the Helm release**:
+   ```bash
+   helm upgrade --install demo-wks ./services/wks \
+     --namespace wks-demo --create-namespace \
+     --set image.tag=<tag> \
+     --set image.pullPolicy=Always
+
+   # Uninstall
+   helm uninstall demo-wks --namespace wks-demo
+   ```
+
+5. **Monitor the rollout / access the service**:
+   ```bash
+   kubectl -n wks-demo get pods -w
+   kubectl -n wks-demo logs deploy/demo-wks-wks
+
+   POD=$(kubectl -n wks-demo get pods -l app.kubernetes.io/name=wks -o jsonpath='{.items[0].metadata.name}')
+   kubectl -n wks-demo port-forward "$POD" 8080:8080
+   # Visit http://127.0.0.1:8080/health
+   ```
 
 ## Local Development
 
