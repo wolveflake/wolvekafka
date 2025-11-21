@@ -3,7 +3,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/dguptawolveflake/wks
+  repository: ghcr.io/wolveflake/wks
   tag: latest
   pullPolicy: IfNotPresent
   pullSecrets:
@@ -73,7 +73,7 @@ extraEnvFrom: []
 livenessProbe:
   enabled: true
   httpGet:
-    path: /healthz
+    path: /health
     port: http
   initialDelaySeconds: 10
   periodSeconds: 15
@@ -81,7 +81,7 @@ livenessProbe:
 readinessProbe:
   enabled: true
   httpGet:
-    path: /readyz
+    path: /health
     port: http
   initialDelaySeconds: 5
   periodSeconds: 10

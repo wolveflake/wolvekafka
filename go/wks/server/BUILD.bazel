@@ -1,7 +1,7 @@
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 load("//go/wks/server:oci_push_do.bzl", "oci_push_do")
 
@@ -26,7 +26,9 @@ go_binary(
 
 pkg_files(
     name = "server_rootfs_files",
-    srcs = [":server"],
+    srcs = [":server_image_binary"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {":server_image_binary": "server"},
     strip_prefix = strip_prefix.files_only(),
     visibility = ["//visibility:private"],
 )
@@ -35,6 +37,14 @@ pkg_tar(
     name = "server_rootfs",
     srcs = [":server_rootfs_files"],
     out = "server_rootfs.tar",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "server_image_binary",
+    srcs = [":server"],
+    outs = ["server_image_binary_bin"],
+    cmd = "cp $< $@ && chmod 0755 $@",
     visibility = ["//visibility:private"],
 )
 
@@ -75,7 +85,7 @@ oci_push_do(
     image = ":transitioned_image_linux_amd64",
     # tag(s) as a list
     remote_tags = ["latest"],
-    repository = "ghcr.io/dguptawolveflake/wks",
+    repository = "ghcr.io/wolveflake/wks",
 )
 
 oci_push_do(
@@ -83,7 +93,7 @@ oci_push_do(
     image = ":transitioned_image_linux_arm64",
     # tag(s) as a list
     remote_tags = ["latest"],
-    repository = "ghcr.io/dguptawolveflake/wks",
+    repository = "ghcr.io/wolveflake/wks",
     visibility = ["//visibility:public"],
 )
 
