@@ -3,10 +3,11 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: registry.digitalocean.com/wolveflake/wks
+  repository: ghcr.io/dguptawolveflake/wks
   tag: latest
   pullPolicy: IfNotPresent
-  pullSecrets: []
+  pullSecrets:
+    - name: demo-regcred
 
 serviceAccount:
   create: true
