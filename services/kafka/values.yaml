@@ -25,6 +25,10 @@ kafkaShell:
     - "/bin/bash"
     - "-c"
     - "trap : TERM INT; sleep infinity & wait"
+  producerScript:
+    enabled: true
+    mountPath: /opt/wolvekafka
+    fileName: demo_producer.py
   resources:
     requests:
       cpu: 50m

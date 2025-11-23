@@ -23,6 +23,12 @@ spec:
           value: {{ printf "%s:%d" (include "kafka-demo.kafkaServiceName" .) (int .Values.kafka.service.port) | quote }}
       resources:
         {{- toYaml .Values.kafkaShell.resources | nindent 8 }}
+      {{- if .Values.kafkaShell.producerScript.enabled }}
+      volumeMounts:
+        - name: kafka-shell-scripts
+          mountPath: {{ .Values.kafkaShell.producerScript.mountPath }}
+          readOnly: true
+      {{- end }}
   {{- with .Values.kafkaShell.nodeSelector }}
   nodeSelector:
     {{- toYaml . | nindent 4 }}
@@ -34,5 +40,11 @@ spec:
   {{- with .Values.kafkaShell.affinity }}
   affinity:
     {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if .Values.kafkaShell.producerScript.enabled }}
+  volumes:
+    - name: kafka-shell-scripts
+      configMap:
+        name: {{ include "kafka-demo.kafkaShellScriptsName" . }}
   {{- end }}
 {{- end }}

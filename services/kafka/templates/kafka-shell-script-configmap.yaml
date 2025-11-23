@@ -1,0 +1,12 @@
+{{- if and .Values.kafkaShell.enabled .Values.kafkaShell.producerScript.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kafka-demo.kafkaShellScriptsName" . }}
+  labels:
+    {{- include "kafka-demo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kafka-shell
+data:
+  {{ .Values.kafkaShell.producerScript.fileName }}: |-
+{{ (.Files.Get "scripts/demo_producer.py") | indent 4 }}
+{{- end }}
