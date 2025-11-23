@@ -1,0 +1,14 @@
+1. Get the application URL by running these commands:
+{{- if .Values.ingress.enabled }}
+  Ingress enabled:
+  {{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}
+  {{- end }}
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+    kubectl get svc --namespace {{ .Release.Namespace }} {{ include "lambda.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+{{- else }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "lambda.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl port-forward $POD_NAME 8080:{{ .Values.service.port }}
+  echo "Visit http://127.0.0.1:8080"
+{{- end }}

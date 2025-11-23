@@ -1,0 +1,99 @@
+load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
+load("//go/lambda/server:oci_push_do.bzl", "oci_push_do")
+
+exports_files(["do_push.sh.tpl"])
+
+go_library(
+    name = "server_lib",
+    srcs = ["main.go"],
+    importpath = "wolvekafka/go/lambda/server",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//go/common/logger",
+        "//go/lambda",
+    ],
+)
+
+go_binary(
+    name = "server",
+    embed = [":server_lib"],
+    visibility = ["//visibility:public"],
+)
+
+pkg_files(
+    name = "server_rootfs_files",
+    srcs = [":server_image_binary"],
+    attributes = pkg_attributes(mode = "0755"),
+    renames = {":server_image_binary": "lambda-server"},
+    strip_prefix = strip_prefix.files_only(),
+    visibility = ["//visibility:private"],
+)
+
+pkg_tar(
+    name = "server_rootfs",
+    srcs = [":server_rootfs_files"],
+    out = "server_rootfs.tar",
+    visibility = ["//visibility:private"],
+)
+
+genrule(
+    name = "server_image_binary",
+    srcs = [":server"],
+    outs = ["server_image_binary_bin"],
+    cmd = "cp $< $@ && chmod 0755 $@",
+    visibility = ["//visibility:private"],
+)
+
+oci_image(
+    name = "image",
+    base = "@ubuntu//:ubuntu",
+    entrypoint = ["/lambda-server"],
+    tars = [":server_rootfs"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push_do(
+    name = "image_push",
+    image = ":transitioned_image_linux_amd64",
+    remote_tags = ["latest"],
+    repository = "registry.digitalocean.com/wolveflake/lambda",
+)
+
+oci_push_do(
+    name = "image_push_arm64",
+    image = ":transitioned_image_linux_arm64",
+    remote_tags = ["latest"],
+    repository = "registry.digitalocean.com/wolveflake/lambda",
+    visibility = ["//visibility:public"],
+)
+
+oci_push_do(
+    name = "image_push_ghcr",
+    image = ":transitioned_image_linux_amd64",
+    remote_tags = ["latest"],
+    repository = "ghcr.io/wolveflake/lambda",
+)
+
+oci_push_do(
+    name = "image_push_ghcr_arm64",
+    image = ":transitioned_image_linux_arm64",
+    remote_tags = ["latest"],
+    repository = "ghcr.io/wolveflake/lambda",
+    visibility = ["//visibility:public"],
+)
+
+platform_transition_filegroup(
+    name = "transitioned_image_linux_amd64",
+    srcs = [":image"],
+    target_platform = "@rules_go//go/toolchain:linux_amd64",
+)
+
+platform_transition_filegroup(
+    name = "transitioned_image_linux_arm64",
+    srcs = [":image"],
+    target_platform = "@rules_go//go/toolchain:linux_arm64",
+)

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: lambda
+description: Helm chart for deploying the hello world lambda HTTP service.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+sources:
+  - https://github.com/avyandeepak/wolvekafka/tree/main/go/lambda/server
+maintainers:
+  - name: Wolvekafka Team
+    email: dev@wolvekafka.local
