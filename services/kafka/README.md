@@ -42,3 +42,20 @@ kubectl port-forward svc/demo-kafka-kafka 9092:9092 -n kafka-demo
 ```
 
 Then use your favourite Kafka client pointing at `localhost:9092`.
+
+## Publish Demo Messages from the Shell Pod
+
+The chart ships with a helper script mounted inside the `kafka-shell` pod at `/opt/wolvekafka/demo_producer.py`. Use it to seed a topic from inside the cluster:
+
+```bash
+POD=$(kubectl -n kafka-demo get pod -l app.kubernetes.io/component=kafka-shell -o jsonpath='{.items[0].metadata.name}')
+kubectl -n kafka-demo exec -it "$POD" -- bash
+
+# Install the python dependency once inside the shell
+pip install --user kafka-python
+
+# Publish JSON demo events (KAFKA_BOOTSTRAP_SERVERS is pre-populated)
+python3 /opt/wolvekafka/demo_producer.py --topic demo-topic --count 5
+```
+
+`KAFKA_BOOTSTRAP_SERVERS` already points the script at the in-cluster broker, so you only need to pass a topic. Use `--count 0` to stream indefinitely, `--message "..."` to tweak the payload, or override `--bootstrap-servers` if you exposed Kafka externally.

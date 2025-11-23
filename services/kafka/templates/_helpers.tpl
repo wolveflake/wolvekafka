@@ -47,3 +47,7 @@ app.kubernetes.io/component: kafka
 app.kubernetes.io/component: zookeeper
 {{ include "kafka-demo.labels" . }}
 {{- end -}}
+
+{{- define "kafka-demo.kafkaShellScriptsName" -}}
+{{- printf "%s-shell-scripts" (include "kafka-demo.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
