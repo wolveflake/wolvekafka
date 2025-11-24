@@ -16,8 +16,10 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.0.2")
 bazel_dep(name = "protobuf", version = "33.0")
 bazel_dep(name = "jq.bzl", version = "0.4.0")
+
 jq_toolchains_ext = use_extension("@jq.bzl//jq:extensions.bzl", "toolchains")
 use_repo(jq_toolchains_ext, "jq_toolchains")
+
 register_toolchains("@jq_toolchains//:all")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
@@ -86,4 +88,5 @@ oci.pull(
 )
 use_repo(oci, "distroless_base", "distroless_base_linux_amd64", "distroless_base_linux_arm64", "ubuntu", "ubuntu_linux_amd64", "ubuntu_linux_arm64_v8")
 use_repo(oci, "wolvekafka_crane_toolchains", "wolvekafka_regctl_toolchains")
+
 register_toolchains("@wolvekafka_crane_toolchains//:all", "@wolvekafka_regctl_toolchains//:all")

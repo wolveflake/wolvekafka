@@ -1,0 +1,11 @@
+{{- if .Values.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wks.fullname" . }}-config
+  labels:
+    {{- include "wks.labels" . | nindent 4 }}
+data:
+  {{ .Values.config.fileName }}: |
+{{ nindent 4 .Values.config.data }}
+{{- end }}

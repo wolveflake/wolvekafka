@@ -197,3 +197,24 @@ func (w *WolveKafkaService) stopProcessingJobs(consumerRef *consumerRef) {
 		job.ctxCancel()
 	}
 }
+
+// Close stops all managed consumers and releases resources.
+func (w *WolveKafkaService) Close() error {
+	if w == nil {
+		return nil
+	}
+	if w.ctxCancel != nil {
+		w.ctxCancel()
+	}
+	consumers := w.consumers.Load().(map[string]*consumerRef)
+	for _, ref := range consumers {
+		if ref == nil {
+			continue
+		}
+		w.stopProcessingJobs(ref)
+		if ref.executor != nil {
+			_ = ref.executor.Configure(executor.WorkPoolExecutorParams{NumWorkers: 0})
+		}
+	}
+	return nil
+}

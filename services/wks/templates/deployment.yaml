@@ -33,6 +33,10 @@ spec:
         - name: {{ include "wks.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.config.enabled }}
+          args:
+            - --config_path={{ .Values.config.path }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
@@ -57,13 +61,29 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- with .Values.extraVolumeMounts }}
+          {{- $extraVolumeMounts := default (list) .Values.extraVolumeMounts }}
+          {{- if or .Values.config.enabled (gt (len $extraVolumeMounts) 0) }}
           volumeMounts:
+            {{- if .Values.config.enabled }}
+            - name: wks-config
+              mountPath: {{ .Values.config.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with $extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
-      {{- with .Values.extraVolumes }}
+      {{- $extraVolumes := default (list) .Values.extraVolumes }}
+      {{- if or .Values.config.enabled (gt (len $extraVolumes) 0) }}
       volumes:
+        {{- if .Values.config.enabled }}
+        - name: wks-config
+          configMap:
+            name: {{ include "wks.fullname" . }}-config
+        {{- end }}
+        {{- with $extraVolumes }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
