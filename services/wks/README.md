@@ -22,6 +22,9 @@ This chart deploys the `go/wks/server` binary (packaged into the OCI image built
 | `autoscaling.enabled` | Enable HPA | `false` |
 | `resources` | Pod resource requests/limits | See `values.yaml` |
 | `env` | Additional environment variables passed to the container | `[LOG_LEVEL, PORT]` |
+| `config.*` | JSON config (mounted as `/etc/wks/config/config.json`) that bootstraps WKS | See `values.yaml` |
+
+By default the chart materializes the sample config defined in `values.yaml` into a ConfigMap and mounts it at `/etc/wks/config/config.json`. Update `config.data` (and optionally `config.path`, `config.fileName`, or `config.mountPath`) to point WKS at your own consumer definitions.
 
 Refer to `values.yaml` for the full list of configurable settings (ingress, probes, PDB, volume mounts, etc.).
 
