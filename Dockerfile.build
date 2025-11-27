@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7
+ARG UBUNTU_VERSION=22.04
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# --- Base packages needed for builds and Bazel actions ---
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        clang \
+        curl \
+        file \
+        git \
+        gnupg \
+        jq \
+        libkrb5-dev \
+        libssl-dev \
+        libzstd-dev \
+        liblz4-dev \
+        pkg-config \
+        python3 \
+        python3-pip \
+        rsync \
+        tzdata \
+        unzip \
+        zip \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- crane CLI for registry operations ---
+ARG CRANE_VERSION=v0.20.2
+RUN curl -fsSL "https://github.com/google/go-containerregistry/releases/download/${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+        | tar -C /usr/local/bin -xz crane
+
+# --- Bazelisk (manages Bazel versions) ---
+ARG BAZELISK_VERSION=1.20.0
+RUN curl -fsSL "https://github.com/bazelbuild/bazelisk/releases/download/v${BAZELISK_VERSION}/bazelisk-linux-amd64" \
+        -o /usr/local/bin/bazelisk \
+    && chmod +x /usr/local/bin/bazelisk \
+    && ln -s /usr/local/bin/bazelisk /usr/local/bin/bazel
+
+# --- Go toolchain (used for gofmt, linting, etc.; Bazel uses its own SDK) ---
+ARG GO_VERSION=1.23.3
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+        | tar -C /usr/local -xz
+ENV PATH="/usr/local/go/bin:${PATH}" \
+    GOPATH=/go
+RUN mkdir -p "$GOPATH"
+
+# Build and install librdkafka >= 2.12 into /opt/homebrew so the patched
+# Kafka BUILD links against a recent version without extra flags.
+ARG LIBRDKAFKA_VERSION=2.12.0
+RUN set -eux; \
+    mkdir -p /tmp/build && cd /tmp/build; \
+    curl -fsSL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v${LIBRDKAFKA_VERSION}.tar.gz" -o librdkafka.tar.gz; \
+    tar -xzf librdkafka.tar.gz; \
+    cd "librdkafka-${LIBRDKAFKA_VERSION}"; \
+    ./configure --prefix=/opt/homebrew; \
+    make -j"$(nproc)"; \
+    make install; \
+    cd /; \
+    rm -rf /tmp/build
+
+WORKDIR /workspace
+
+# Provide a default command so "docker run" drops into a shell ready for Bazel commands.
+CMD ["/bin/bash"]
