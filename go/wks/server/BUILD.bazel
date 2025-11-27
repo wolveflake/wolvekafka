@@ -91,6 +91,14 @@ oci_push_do(
 )
 
 oci_push_do(
+    name = "image_push_ghcr_2",
+    image = ":image",
+    # tag(s) as a list
+    remote_tags = ["latest"],
+    repository = "ghcr.io/wolveflake/wks",
+)
+
+oci_push_do(
     name = "image_push_ghcr_arm64",
     image = ":transitioned_image_linux_arm64",
     # tag(s) as a list
