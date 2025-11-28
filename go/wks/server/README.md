@@ -21,7 +21,7 @@ docker run --rm -it --platform=linux/amd64 \
 Inside the shell:
 
 ```bash
-bazel build //go/wks/server:image
+bazel build //go/wks/server:image_linux
 ```
 
 ## 3. Authenticate to GHCR
@@ -54,7 +54,7 @@ Docker writes credentials to `/root/.docker/config.json` inside the container, w
 ## 4. Push images
 
 ```bash
-bazel run //go/wks/server:image_push_ghcr_2       # linux/amd64
+bazel run //go/wks/server:image_push_linux        # linux/amd64
 ```
 
 If you prefer macOS to handle the push directly, keep the existing `platform_transition_filegroup` targets and run the same commands outside the container; just ensure `crane auth login` has been run locally.

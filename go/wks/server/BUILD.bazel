@@ -40,6 +40,22 @@ pkg_tar(
     visibility = ["//visibility:private"],
 )
 
+# Package the dynamically linked librdkafka.so artifacts from the build image
+# so that the runtime container has the same shared libraries available.
+genrule(
+    name = "librdkafka_rootfs",
+    outs = ["librdkafka_rootfs.tar"],
+    cmd = """
+set -eux
+tmp=$$(mktemp -d)
+trap 'rm -rf "$$tmp"' EXIT
+mkdir -p "$$tmp/usr/local/lib"
+cp /opt/homebrew/lib/librdkafka.so* "$$tmp/usr/local/lib/"
+tar -C "$$tmp" -cf $@ .
+""",
+    visibility = ["//visibility:private"],
+)
+
 genrule(
     name = "server_image_binary",
     srcs = [":server"],
@@ -50,11 +66,24 @@ genrule(
 
 # Build the image
 oci_image(
-    name = "image",
+    name = "image_linux",
     base = "@ubuntu//:ubuntu",
     # Entrypoint
     entrypoint = ["/server"],
+    env = {"LD_LIBRARY_PATH": "/usr/local/lib"},
     # Layers to add to the base image
+    tars = [
+        ":server_rootfs",
+        ":librdkafka_rootfs",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Variant without the librdkafka shared libraries for local macOS workflows.
+oci_image(
+    name = "image_mac",
+    base = "@ubuntu//:ubuntu",
+    entrypoint = ["/server"],
     tars = [":server_rootfs"],
     visibility = ["//visibility:public"],
 )
@@ -81,39 +110,22 @@ oci_push_do(
 )
 
 oci_push_do(
-    name = "image_push_ghcr",
-    image = ":transitioned_image_linux_amd64",
+    name = "image_push_linux",
+    image = ":image_linux",
     # tag(s) as a list
     remote_tags = ["latest"],
     repository = "ghcr.io/wolveflake/wks",
-)
-
-oci_push_do(
-    name = "image_push_ghcr_2",
-    image = ":image",
-    # tag(s) as a list
-    remote_tags = ["latest"],
-    repository = "ghcr.io/dguptawolveflake/wks",
-)
-
-oci_push_do(
-    name = "image_push_ghcr_arm64",
-    image = ":transitioned_image_linux_arm64",
-    # tag(s) as a list
-    remote_tags = ["latest"],
-    repository = "ghcr.io/wolveflake/wks",
-    visibility = ["//visibility:public"],
 )
 
 # This is the target that should be released to the target platform
 platform_transition_filegroup(
     name = "transitioned_image_linux_amd64",
-    srcs = [":image"],
+    srcs = [":image_linux"],
     target_platform = "@rules_go//go/toolchain:linux_amd64",
 )
 
 platform_transition_filegroup(
     name = "transitioned_image_linux_arm64",
-    srcs = [":image"],
+    srcs = [":image_linux"],
     target_platform = "@rules_go//go/toolchain:linux_arm64",
 )
