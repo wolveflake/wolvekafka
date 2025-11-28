@@ -95,7 +95,7 @@ oci_push_do(
     image = ":image",
     # tag(s) as a list
     remote_tags = ["latest"],
-    repository = "ghcr.io/wolveflake/wks",
+    repository = "ghcr.io/dguptawolveflake/wks",
 )
 
 oci_push_do(

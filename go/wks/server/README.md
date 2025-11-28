@@ -26,11 +26,30 @@ bazel build //go/wks/server:image
 
 ## 3. Authenticate to GHCR
 
+### Option A: crane (default)
+
 Use the bundled crane binary in the container. Do **not** mount your macOS Docker config unless you strip out `"credsStore": "desktop"` first.
 
 ```bash
 crane auth login ghcr.io -u <github-user> -p <personal-access-token>
 ```
+
+### Option B: docker CLI
+
+If you prefer Docker’s credential flow, the image also includes `docker`. Mount the host socket and run the standard login command:
+
+```bash
+docker run --rm -it --platform=linux/amd64 \
+  -v "$(pwd)":/workspace \
+  -v wolvekafka-bazel-cache:/root/.cache/bazel \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -w /workspace \
+  wolvekafka-build bash
+
+docker login ghcr.io -u <github-user> -p <personal-access-token>
+```
+
+Docker writes credentials to `/root/.docker/config.json` inside the container, which Bazel’s crane-based push targets also consume.
 
 ## 4. Push images
 
