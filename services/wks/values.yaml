@@ -71,7 +71,7 @@ config:
     {
       "cluster": {
         "bootstrap_servers": [
-          "broker1:9092"
+          "demo-kafka-kafka-demo-kafka:9092"
         ]
       },
       "consumers": [
@@ -82,7 +82,7 @@ config:
           ],
           "lambdas": [
             {
-              "url": "http://lambda-lambda.lambda.svc.cluster.local:8081/hello"
+              "url": "http://lambda-lambda.default.svc.cluster.local:8081/hello"
             }
           ]
         }
