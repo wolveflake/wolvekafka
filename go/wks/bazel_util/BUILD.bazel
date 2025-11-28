@@ -1,0 +1,3 @@
+# Shared Bazel utilities for WKS targets
+
+exports_files(["do_push.sh.tpl"])
