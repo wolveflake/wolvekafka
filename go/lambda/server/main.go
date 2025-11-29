@@ -21,25 +21,22 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"strings"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"wolvekafka/go/common/logger"
 	lambda "wolvekafka/go/lambda"
+	model_pb "wolvekafka/proto/model"
 )
 
 var (
 	listenAddr = flag.String("listen", "", "address for the lambda HTTP server")
 )
-
-type helloRequest struct {
-	Message string `json:"message"`
-}
-
-type helloResponse struct {
-	Message string `json:"message"`
-}
 
 func main() {
 	flag.Parse()
@@ -75,22 +72,35 @@ func helloHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req helloRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		logger.S().Warnf("invalid hello request: %v", err)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.S().Warnf("failed to read request body: %v", err)
+		http.Error(w, fmt.Sprintf("failed to read request body: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer r.Body.Close()
+
+	var lambdaReq model_pb.LambdaRequest
+	if err := protojson.Unmarshal(body, &lambdaReq); err != nil {
+		logger.S().Warnf("invalid lambda request: %v", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	req.Message = strings.TrimSpace(req.Message)
-	if req.Message == "" {
-		http.Error(w, "message is required", http.StatusBadRequest)
+	if len(lambdaReq.GetMessages()) == 0 {
+		http.Error(w, "lambda request payload missing messages", http.StatusBadRequest)
 		return
 	}
 
-	lambda.PrintMessage(req.Message)
+	for _, msg := range lambdaReq.GetMessages() {
+		lambda.PrintMessage(fmt.Sprintf("[%s:%d offset=%d] %s", msg.GetTopic(), msg.GetPartition(), msg.GetOffset(), string(msg.GetValue())))
+	}
 
-	writeJSON(w, http.StatusOK, helloResponse{Message: req.Message})
+	writeProtoJSON(w, http.StatusOK, &model_pb.LambdaResponse{
+		Messages: []*model_pb.ResponseMessage{
+			{Status: model_pb.ResponseStatus_STATUS_SUCCESS},
+		},
+	})
 }
 
 func healthHandler(w http.ResponseWriter, _ *http.Request) {
@@ -102,5 +112,20 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		logger.S().Warnf("failed to encode response: %v", err)
+	}
+}
+
+func writeProtoJSON(w http.ResponseWriter, status int, msg proto.Message) {
+	payload, err := protojson.Marshal(msg)
+	if err != nil {
+		logger.S().Warnf("failed to marshal response: %v", err)
+		http.Error(w, "failed to marshal response", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if _, err := w.Write(payload); err != nil {
+		logger.S().Warnf("failed to write response: %v", err)
 	}
 }

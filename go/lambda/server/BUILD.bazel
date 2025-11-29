@@ -13,6 +13,9 @@ go_library(
     deps = [
         "//go/common/logger",
         "//go/lambda",
+        "//proto/model",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 
@@ -58,7 +61,7 @@ oci_push_do(
     name = "image_push",
     image = ":transitioned_image_linux_amd64",
     remote_tags = ["latest"],
-    repository = "registry.digitalocean.com/wolveflake/lambda",
+    repository = "ghcr.io/wolveflake/lambda",
 )
 
 oci_push_do(

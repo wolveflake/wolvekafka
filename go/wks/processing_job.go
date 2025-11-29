@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -114,15 +115,19 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 		}
 		defer resp.Body.Close()
 
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			return nil, fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode)
-		}
-
-		// read & parse response.
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("lambda request failed with status %d and read error: %v", resp.StatusCode, err)
+			return nil, fmt.Errorf("lambda request failed with status %d and read error: %w", resp.StatusCode, err)
 		}
+
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			reason := strings.TrimSpace(string(body))
+			if reason == "" {
+				reason = resp.Status
+			}
+			return nil, fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, reason)
+		}
+
 		respMsgs, err := ParseLambdaResponse(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to unmarshal lambda response: %w", err)

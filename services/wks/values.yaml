@@ -82,7 +82,7 @@ config:
           ],
           "lambdas": [
             {
-              "url": "http://lambda-lambda.default.svc.cluster.local:8081/hello"
+              "url": "http://lambda-lambda.wks-demo.svc.cluster.local:8081/hello"
             }
           ]
         }
