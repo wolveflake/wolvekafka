@@ -85,6 +85,9 @@ type ProcessingJob struct {
 	// lambda response msg handler.
 	outputPolicy *OutputPolicy
 
+	// DLQ producer for failed messages.
+	dlqProducer *kafka.Producer
+
 	shutdownOnce sync.Once
 }
 
@@ -136,12 +139,13 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 		return respMsgs, nil
 	}
 
-	return c.executeWithRetry(ctx, sendOnce)
+	return c.executeWithRetry(ctx, req, sendOnce)
 }
 
 // executeWithRetry runs the provided function until it succeeds or retry policy rules are exhausted.
 func (c *ProcessingJob) executeWithRetry(
 	ctx context.Context,
+	lambdaReq *model_pb.LambdaRequest,
 	fn func(context.Context) (*model_pb.LambdaResponse, error)) (*model_pb.LambdaResponse, error) {
 
 	lambdaResponse, lastErr := fn(ctx)
@@ -187,8 +191,19 @@ func (c *ProcessingJob) executeWithRetry(
 		}
 	}
 
+	// Handle action after retries are exhausted
 	if retryPolicy.GetDrop() != nil {
 		c.log.Warnf("[%v:%v] dropping message batch after %d attempts due to: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+		return nil, nil
+	}
+
+	if dlqAction := retryPolicy.GetDlq(); dlqAction != nil {
+		c.log.Warnf("[%v:%v] sending message batch to DLQ after %d attempts due to: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+		if err := c.sendToDLQ(ctx, lambdaReq, dlqAction, lastErr); err != nil {
+			c.log.Errorf("[%v:%v] failed to send to DLQ: %v", c.consumerName, c.jobId, err)
+			return lambdaResponse, fmt.Errorf("processing failed and DLQ send failed: %w", err)
+		}
+		// Message successfully sent to DLQ, return nil error to allow commit
 		return nil, nil
 	}
 
@@ -258,6 +273,101 @@ func sleepWithContext(ctx context.Context, duration time.Duration) error {
 	}
 }
 
+// sendToDLQ sends a failed message batch to the DLQ topic with retry logic.
+func (c *ProcessingJob) sendToDLQ(ctx context.Context, lambdaReq *model_pb.LambdaRequest, dlqAction *configs_pb.DLQAction, processingErr error) error {
+	if c.dlqProducer == nil {
+		return fmt.Errorf("DLQ producer not initialized")
+	}
+
+	if dlqAction == nil || dlqAction.GetTopic() == "" {
+		return fmt.Errorf("DLQ topic not configured")
+	}
+
+	dlqTopic := dlqAction.GetTopic()
+
+	// Convert lambda request messages to DLQ messages
+	for _, msg := range lambdaReq.GetMessages() {
+		dlqMsg := &kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &dlqTopic,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   msg.GetKey(),
+			Value: msg.GetValue(),
+		}
+
+		// Copy headers from original message
+		for _, header := range msg.GetHeaders() {
+			dlqMsg.Headers = append(dlqMsg.Headers, kafka.Header{
+				Key:   header.GetKey(),
+				Value: header.GetValue(),
+			})
+		}
+
+		// Add error metadata header
+		dlqMsg.Headers = append(dlqMsg.Headers, kafka.Header{
+			Key:   "x-processing-error",
+			Value: []byte(processingErr.Error()),
+		})
+
+		// Send with DLQ retry policy
+		sendFunc := func(ctx context.Context) error {
+			return c.dlqProducer.Produce(ctx, dlqMsg)
+		}
+
+		if err := c.executeWithDLQRetry(ctx, sendFunc, dlqAction); err != nil {
+			c.log.Errorf("[%v:%v] failed to send message to DLQ topic %s: %v", c.consumerName, c.jobId, dlqTopic, err)
+			return err
+		}
+
+		c.log.Infof("[%v:%v] successfully sent message to DLQ topic %s", c.consumerName, c.jobId, dlqTopic)
+	}
+
+	return nil
+}
+
+// executeWithDLQRetry runs the provided function with DLQ-specific retry logic.
+func (c *ProcessingJob) executeWithDLQRetry(ctx context.Context, fn func(context.Context) error, dlqAction *configs_pb.DLQAction) error {
+	lastErr := fn(ctx)
+	if lastErr == nil {
+		return nil
+	}
+
+	retryPolicy := dlqAction.GetRetryPolicy()
+	if retryPolicy == nil {
+		return lastErr
+	}
+
+	var backoffDurations []time.Duration
+	if exponential := retryPolicy.(*configs_pb.DLQAction_ExponentialBackoff); exponential != nil {
+		backoffDurations = buildBackoffSchedule(exponential.ExponentialBackoff)
+	}
+
+	if len(backoffDurations) == 0 {
+		return lastErr
+	}
+
+	totalAttempts := 1 + len(backoffDurations)
+	c.log.Warnf("[%v:%v] DLQ send attempt 1/%d failed: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+
+	for idx, backoff := range backoffDurations {
+		if err := sleepWithContext(ctx, backoff); err != nil {
+			return err
+		}
+
+		attempt := idx + 2
+		c.log.Warnf("[%v:%v] retrying DLQ send attempt %d/%d after %v", c.consumerName, c.jobId, attempt, totalAttempts, backoff)
+
+		lastErr = fn(ctx)
+		if lastErr == nil {
+			return nil
+		}
+	}
+
+	c.log.Errorf("[%v:%v] exhausted %d attempts sending to DLQ: %v", c.consumerName, c.jobId, totalAttempts, lastErr)
+	return lastErr
+}
+
 // createKafkaConsumer creates a new Kafka consumer with retry logic.
 func (c *ProcessingJob) createKafkaConsumer(consumerParams kafka.ConsumerParams) (*kafka.Consumer, error) {
 	for {
@@ -321,6 +431,11 @@ func (c *ProcessingJob) Execute() {
 
 	if err := c.ensureOutputProducer(); err != nil {
 		c.log.Errorf("[%v:%v] failed to create output kafka producer: %v", c.consumerName, c.jobId, err)
+		return
+	}
+
+	if err := c.ensureDLQProducer(); err != nil {
+		c.log.Errorf("[%v:%v] failed to create DLQ kafka producer: %v", c.consumerName, c.jobId, err)
 		return
 	}
 
@@ -453,6 +568,12 @@ func (c *ProcessingJob) done() {
 				c.log.Errorf("[%v:%v] error closing output policy: %v", c.consumerName, c.jobId, err)
 			}
 		}
+
+		if c.dlqProducer != nil {
+			if err := c.dlqProducer.Close(); err != nil {
+				c.log.Errorf("[%v:%v] error closing DLQ producer: %v", c.consumerName, c.jobId, err)
+			}
+		}
 	})
 }
 
@@ -494,5 +615,38 @@ func (c *ProcessingJob) ensureOutputProducer() error {
 	if c.outputPolicy.log == nil {
 		c.outputPolicy.log = c.log
 	}
+	return nil
+}
+
+func (c *ProcessingJob) ensureDLQProducer() error {
+	retryPolicy := c.consumerCfg.GetRetryPolicy()
+	if retryPolicy == nil {
+		return nil
+	}
+
+	dlqAction := retryPolicy.GetDlq()
+	if dlqAction == nil {
+		return nil
+	}
+
+	if dlqAction.GetTopic() == "" {
+		return nil
+	}
+
+	if c.dlqProducer != nil {
+		return nil
+	}
+
+	producerName := fmt.Sprintf("%s-dlq-%d", c.consumerName, c.jobId)
+	producer, err := kafka.NewProducer(c.ctx, kafka.ProducerParams{
+		Name:    producerName,
+		Cluster: c.clusterCfg,
+	})
+	if err != nil {
+		return err
+	}
+
+	c.dlqProducer = producer
+	c.log.Infof("[%v:%v] DLQ producer initialized for topic: %s", c.consumerName, c.jobId, dlqAction.GetTopic())
 	return nil
 }
