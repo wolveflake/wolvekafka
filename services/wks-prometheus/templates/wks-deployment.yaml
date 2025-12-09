@@ -1,68 +1,99 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "wks-prometheus.fullname" . }}-wks
+  name: {{ include "wks-prometheus.fullname" . }}
   labels:
-    {{- include "wks-prometheus.wksLabels" . | nindent 4 }}
+    {{- include "wks-prometheus.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.wks.replicaCount }}
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "wks-prometheus.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: wks
   template:
     metadata:
       labels:
         {{- include "wks-prometheus.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: wks
-    spec:
-      {{- if .Values.wks.image.pullSecrets }}
-      imagePullSecrets:
-        {{- range .Values.wks.image.pullSecrets }}
-        - name: {{ . }}
-        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
+    spec:
+      serviceAccountName: {{ include "wks-prometheus.serviceAccountName" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        runAsNonRoot: true
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
-        - name: wks
-          image: "{{ .Values.wks.image.repository }}:{{ .Values.wks.image.tag }}"
-          imagePullPolicy: {{ .Values.wks.image.pullPolicy }}
+        - name: {{ include "wks-prometheus.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.config.enabled }}
+          args:
+            - --config_path={{ .Values.config.path }}
+          {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.wks.service.port }}
+              containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          {{- if .Values.env }}
           env:
-            {{- range .Values.wks.env }}
-            - name: {{ .name }}
-              value: {{ .value | quote }}
-            {{- end }}
-          resources:
-            {{- toYaml .Values.wks.resources | nindent 12 }}
-          {{- if .Values.wks.config.enabled }}
-          volumeMounts:
-            - name: wks-config
-              mountPath: {{ .Values.wks.config.mountPath }}
-              readOnly: true
+            {{- toYaml .Values.env | nindent 12 }}
           {{- end }}
-          readinessProbe:
-            httpGet:
-              path: {{ .Values.wks.readinessProbe.path }}
-              port: {{ .Values.wks.readinessProbe.port }}
-            initialDelaySeconds: {{ .Values.wks.readinessProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.wks.readinessProbe.periodSeconds }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
           livenessProbe:
-            httpGet:
-              path: {{ .Values.wks.livenessProbe.path }}
-              port: {{ .Values.wks.livenessProbe.port }}
-            initialDelaySeconds: {{ .Values.wks.livenessProbe.initialDelaySeconds }}
-            periodSeconds: {{ .Values.wks.livenessProbe.periodSeconds }}
-      {{- if .Values.wks.config.enabled }}
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.readinessProbe .Values.readinessProbe.enabled }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- $extraVolumeMounts := default (list) .Values.extraVolumeMounts }}
+          {{- if or .Values.config.enabled (gt (len $extraVolumeMounts) 0) }}
+          volumeMounts:
+            {{- if .Values.config.enabled }}
+            - name: wks-config
+              mountPath: {{ .Values.config.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with $extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+      {{- $extraVolumes := default (list) .Values.extraVolumes }}
+      {{- if or .Values.config.enabled (gt (len $extraVolumes) 0) }}
       volumes:
+        {{- if .Values.config.enabled }}
         - name: wks-config
           configMap:
-            name: {{ include "wks-prometheus.fullname" . }}-wks-config
-            items:
-              - key: {{ .Values.wks.config.fileName }}
-                path: {{ .Values.wks.config.fileName }}
+            name: {{ include "wks-prometheus.fullname" . }}-config
+        {{- end }}
+        {{- with $extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
