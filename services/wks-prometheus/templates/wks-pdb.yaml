@@ -1,0 +1,13 @@
+{{- if and .Values.podDisruptionBudget.enabled (not .Values.autoscaling.enabled) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "wks-prometheus.fullname" . }}
+  labels:
+    {{- include "wks-prometheus.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "wks-prometheus.selectorLabels" . | nindent 6 }}
+{{- end }}
