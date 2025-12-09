@@ -1,0 +1,11 @@
+apiVersion: v2
+name: wks-prometheus
+description: Demo stack that runs the wolvekafka WKS service alongside a Prometheus backend for scraping its metrics.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+sources:
+  - https://github.com/avyandeepak/wolvekafka
+maintainers:
+  - name: Wolvekafka Team
+    email: dev@wolvekafka.local

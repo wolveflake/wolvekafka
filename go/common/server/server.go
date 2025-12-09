@@ -162,6 +162,9 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 	srv.HTTPServer = &http.Server{
 		Handler: srv.HTTPRouter,
 	}
+	if handler := metricsHTTPHandler(); handler != nil {
+		srv.HTTPRouter.Handle("/metrics", handler)
+	}
 
 	// Register the handler for the default path
 	srv.HTTPRouter.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {

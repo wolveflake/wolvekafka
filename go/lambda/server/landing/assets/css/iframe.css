@@ -1,0 +1,38 @@
+body {
+  background-color: #fdfdfd;
+}
+
+.grafana-card {
+  border: 1px solid rgba(0, 0, 0, 0.075);
+}
+
+.grafana-card .card-header {
+  background-color: #fafafa;
+}
+
+.grafana-frame {
+  width: 100%;
+  min-height: 360px;
+  border: none;
+  border-radius: .5rem;
+  background: #040f24;
+}
+
+.grafana-input:focus {
+  box-shadow: none;
+  border-color: rgba(13, 110, 253, 0.4);
+}
+
+ol {
+  padding-left: 1.3rem;
+}
+
+ol li + li {
+  margin-top: .25rem;
+}
+
+@media (max-width: 768px) {
+  .grafana-frame {
+    min-height: 300px;
+  }
+}

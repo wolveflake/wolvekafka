@@ -18,11 +18,13 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 
@@ -34,15 +36,28 @@ import (
 	model_pb "wolvekafka/proto/model"
 )
 
+//go:embed landing
+var landingAssets embed.FS
+
 var (
-	listenAddr = flag.String("listen", "", "address for the lambda HTTP server")
+	listenAddr    = flag.String("listen", "", "address for the lambda HTTP server")
+	landingServer http.Handler
 )
+
+func init() {
+	sub, err := fs.Sub(landingAssets, "landing")
+	if err != nil {
+		panic(fmt.Sprintf("landing assets missing: %v", err))
+	}
+	landingServer = http.FileServer(http.FS(sub))
+}
 
 func main() {
 	flag.Parse()
 	addr := resolveListenAddr(*listenAddr)
 
 	mux := http.NewServeMux()
+	mux.Handle("/", landingServer)
 	mux.HandleFunc("/hello", helloHandler)
 	mux.HandleFunc("/health", healthHandler)
 
