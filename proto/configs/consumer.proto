@@ -9,14 +9,16 @@ import "proto/configs/cluster.proto";
 message DropAction {}
 
 message DLQAction {
-  // Kafka cluster for the DLQ.
-  Cluster cluster = 1;
+  // reserved for Kafka cluster for the DLQ (Cluster cluster = 1;)
+  reserved 1;
 
   // Topic for the DLQ.
   string topic = 2;
 
-  // Maximum number of attempts to move the message to the DLQ.
-  uint32 max_attempts = 3;
+  oneof retry_policy {
+    // Exponential backoff strategy.
+    ExponentialBackoff exponential_backoff = 10;
+  }
 }
 
 message ExponentialBackoff {
