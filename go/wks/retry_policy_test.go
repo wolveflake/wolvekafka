@@ -26,15 +26,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
 	model_pb "wolvekafka/proto/model"
 )
 
-// TestExecuteWithRetrySuccess ensures transient failures are retried until success.
-func TestExecuteWithRetrySuccess(t *testing.T) {
+// TestRetryPolicyExecuteWithRetrySuccess ensures transient failures are retried until success.
+func TestRetryPolicyExecuteWithRetrySuccess(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -47,12 +46,11 @@ func TestExecuteWithRetrySuccess(t *testing.T) {
 		},
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        1,
-		log:          zap.NewNop().Sugar(),
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        1,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -61,7 +59,7 @@ func TestExecuteWithRetrySuccess(t *testing.T) {
 	}
 
 	attempts := 0
-	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
 		if attempts < 3 {
 			return nil, fmt.Errorf("transient error %d", attempts)
@@ -72,8 +70,8 @@ func TestExecuteWithRetrySuccess(t *testing.T) {
 	require.Equal(t, 3, attempts)
 }
 
-// TestExecuteWithRetryExhausted verifies errors bubble out when retries are exhausted.
-func TestExecuteWithRetryExhausted(t *testing.T) {
+// TestRetryPolicyExecuteWithRetryExhausted verifies errors bubble out when retries are exhausted.
+func TestRetryPolicyExecuteWithRetryExhausted(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -86,12 +84,11 @@ func TestExecuteWithRetryExhausted(t *testing.T) {
 		},
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        2,
-		log:          zap.NewNop().Sugar(),
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        2,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -101,7 +98,7 @@ func TestExecuteWithRetryExhausted(t *testing.T) {
 
 	attempts := 0
 	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
-	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
 		return nil, errors.New("always fail")
 	})
@@ -109,8 +106,8 @@ func TestExecuteWithRetryExhausted(t *testing.T) {
 	require.Equal(t, expectedAttempts, attempts)
 }
 
-// TestExecuteWithRetryDropAction confirms drop policy swallows final failure.
-func TestExecuteWithRetryDropAction(t *testing.T) {
+// TestRetryPolicyExecuteWithRetryDropAction confirms drop policy swallows final failure.
+func TestRetryPolicyExecuteWithRetryDropAction(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -126,12 +123,11 @@ func TestExecuteWithRetryDropAction(t *testing.T) {
 		},
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        3,
-		log:          zap.NewNop().Sugar(),
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        3,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -141,7 +137,7 @@ func TestExecuteWithRetryDropAction(t *testing.T) {
 
 	attempts := 0
 	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
-	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
 		return nil, errors.New("always fail")
 	})
@@ -149,8 +145,8 @@ func TestExecuteWithRetryDropAction(t *testing.T) {
 	require.Equal(t, expectedAttempts, attempts)
 }
 
-// TestExecuteWithRetryDLQAction confirms DLQ policy sends messages to DLQ after retries exhausted.
-func TestExecuteWithRetryDLQAction(t *testing.T) {
+// TestRetryPolicyExecuteWithRetryDLQAction confirms DLQ policy sends messages to DLQ after retries exhausted.
+func TestRetryPolicyExecuteWithRetryDLQAction(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -186,13 +182,12 @@ func TestExecuteWithRetryDLQAction(t *testing.T) {
 		ProducerFunc: mockProducer,
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        4,
-		log:          zap.NewNop().Sugar(),
-		dlqProducer:  dlqProducer,
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        4,
+		DLQProducer:  dlqProducer,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -203,7 +198,7 @@ func TestExecuteWithRetryDLQAction(t *testing.T) {
 
 	attempts := 0
 	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
-	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
 		return nil, errors.New("always fail")
 	})
@@ -232,8 +227,8 @@ func TestExecuteWithRetryDLQAction(t *testing.T) {
 	}
 }
 
-// TestExecuteWithRetryDLQActionWithRetries confirms DLQ retries work correctly.
-func TestExecuteWithRetryDLQActionWithRetries(t *testing.T) {
+// TestRetryPolicyExecuteWithRetryDLQActionWithRetries confirms DLQ retries work correctly.
+func TestRetryPolicyExecuteWithRetryDLQActionWithRetries(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -272,13 +267,12 @@ func TestExecuteWithRetryDLQActionWithRetries(t *testing.T) {
 		ProducerFunc: mockProducer,
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        5,
-		log:          zap.NewNop().Sugar(),
-		dlqProducer:  dlqProducer,
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        5,
+		DLQProducer:  dlqProducer,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -286,7 +280,7 @@ func TestExecuteWithRetryDLQActionWithRetries(t *testing.T) {
 		},
 	}
 
-	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		return nil, errors.New("processing failed")
 	})
 
@@ -295,8 +289,8 @@ func TestExecuteWithRetryDLQActionWithRetries(t *testing.T) {
 	require.Equal(t, int32(3), dlqAttempts.Load())
 }
 
-// TestExecuteWithRetryDLQActionFailure confirms failure when DLQ exhausts retries.
-func TestExecuteWithRetryDLQActionFailure(t *testing.T) {
+// TestRetryPolicyExecuteWithRetryDLQActionFailure confirms failure when DLQ exhausts retries.
+func TestRetryPolicyExecuteWithRetryDLQActionFailure(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -332,13 +326,12 @@ func TestExecuteWithRetryDLQActionFailure(t *testing.T) {
 		ProducerFunc: mockProducer,
 	}
 
-	job := &ProcessingJob{
-		consumerCfg:  consumerCfg,
-		consumerName: "test-consumer",
-		jobId:        6,
-		log:          zap.NewNop().Sugar(),
-		dlqProducer:  dlqProducer,
-	}
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  consumerCfg,
+		ConsumerName: "test-consumer",
+		JobId:        6,
+		DLQProducer:  dlqProducer,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -346,7 +339,7 @@ func TestExecuteWithRetryDLQActionFailure(t *testing.T) {
 		},
 	}
 
-	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		return nil, errors.New("processing failed")
 	})
 
@@ -363,14 +356,13 @@ func TestExecuteWithRetryDLQActionFailure(t *testing.T) {
 	require.Equal(t, int32(expectedDLQAttempts), dlqAttempts.Load())
 }
 
-// TestExecuteWithRetryNoPolicy makes sure missing policy returns the original error.
-func TestExecuteWithRetryNoPolicy(t *testing.T) {
-	job := &ProcessingJob{
-		consumerCfg:  &configs_pb.Consumer{},
-		consumerName: "test-consumer",
-		jobId:        7,
-		log:          zap.NewNop().Sugar(),
-	}
+// TestRetryPolicyExecuteWithRetryNoPolicy makes sure missing policy returns the original error.
+func TestRetryPolicyExecuteWithRetryNoPolicy(t *testing.T) {
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  &configs_pb.Consumer{},
+		ConsumerName: "test-consumer",
+		JobId:        7,
+	})
 
 	lambdaReq := &model_pb.LambdaRequest{
 		Messages: []*model_pb.KafkaMessage{
@@ -378,7 +370,7 @@ func TestExecuteWithRetryNoPolicy(t *testing.T) {
 		},
 	}
 
-	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+	_, err := retryPolicy.ExecuteWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		return nil, errors.New("fail once")
 	})
 	require.EqualError(t, err, "fail once")
@@ -418,4 +410,16 @@ func TestSleepWithContextCancelled(t *testing.T) {
 
 	err := sleepWithContext(ctx, time.Second)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// TestRetryPolicyClose validates cleanup of DLQ producer.
+func TestRetryPolicyClose(t *testing.T) {
+	// Close with nil producer should not error
+	retryPolicy := NewRetryPolicy(RetryPolicyParams{
+		ConsumerCfg:  &configs_pb.Consumer{},
+		ConsumerName: "test-consumer",
+		JobId:        8,
+	})
+	err := retryPolicy.Close()
+	require.NoError(t, err)
 }
