@@ -12,6 +12,6 @@ data:
       - job_name: "wks"
         static_configs:
           - targets:
-              - "{{ include "wks-prometheus.fullname" . }}-wks:{{ .Values.wks.service.port }}"
+              - "{{ include "wks-prometheus.fullname" . }}:{{ .Values.service.port }}"
             labels:
               namespace: {{ .Release.Namespace }}

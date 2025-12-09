@@ -1,16 +1,19 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "wks-prometheus.fullname" . }}-wks
+  name: {{ include "wks-prometheus.fullname" . }}
   labels:
-    {{- include "wks-prometheus.wksLabels" . | nindent 4 }}
+    {{- include "wks-prometheus.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  type: {{ .Values.wks.service.type }}
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
   selector:
     {{- include "wks-prometheus.selectorLabels" . | nindent 4 }}
-    app.kubernetes.io/component: wks
-  ports:
-    - name: http
-      port: {{ .Values.wks.service.port }}
-      targetPort: http
-      protocol: TCP
