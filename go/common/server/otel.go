@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
+	promclient "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
+	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
-	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
@@ -15,6 +18,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/trace"
 )
+
+var promHandler http.Handler
 
 // setupOTelSDK bootstraps the OpenTelemetry pipeline.
 // If it does not return an error, make sure to call shutdown for proper cleanup.
@@ -96,15 +101,16 @@ func newTracerProvider() (*trace.TracerProvider, error) {
 }
 
 func newMeterProvider() (*metric.MeterProvider, error) {
-	metricExporter, err := stdoutmetric.New()
+	registry := promclient.NewRegistry()
+	promExporter, err := otelprom.New(otelprom.WithRegisterer(registry))
 	if err != nil {
 		return nil, err
 	}
 
+	promHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+
 	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(metricExporter,
-			// Default is 1m. Set to 3s for demonstrative purposes.
-			metric.WithInterval(3*time.Second))),
+		metric.WithReader(promExporter),
 	)
 	return meterProvider, nil
 }
@@ -119,4 +125,8 @@ func newLoggerProvider() (*log.LoggerProvider, error) {
 		log.WithProcessor(log.NewBatchProcessor(logExporter)),
 	)
 	return loggerProvider, nil
+}
+
+func metricsHTTPHandler() http.Handler {
+	return promHandler
 }

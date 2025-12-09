@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html data-bs-theme="light" lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <title>wolvekafka observability</title>
+    <link rel="stylesheet" href="assets/bootstrap/css/bootstrap.min.css">
+    <link rel="stylesheet" href="assets/css/Footer-Basic-icons.css">
+    <link rel="stylesheet" href="assets/css/iframe.css">
+</head>
+<body>
+    <div class="container py-4">
+        <div class="text-center mb-4">
+            <p class="text-uppercase text-muted mb-1">Operational landing</p>
+            <h1 class="fw-semibold">wolvekafka live dashboards</h1>
+            <p class="text-muted">Bring the Grafana panels that matter for a demo or on-call session without rebuilding the binary. Paste a share URL, hit embed, and the page keeps it cached in your browser.</p>
+        </div>
+        <ul class="nav nav-pills justify-content-center mb-4" role="tablist">
+            <li class="nav-item" role="presentation"><a class="nav-link active" role="tab" data-bs-toggle="tab" href="#dashboards">Dashboards</a></li>
+            <li class="nav-item" role="presentation"><a class="nav-link" role="tab" data-bs-toggle="tab" href="#how-to">How it works</a></li>
+        </ul>
+        <div class="tab-content">
+            <div class="tab-pane fade show active" role="tabpanel" id="dashboards">
+                <div class="row g-4">
+                    <div class="col-lg-6">
+                        <div class="card grafana-card" data-card="overview">
+                            <div class="card-header">
+                                <div>
+                                    <h5 class="mb-0">Kafka overview</h5>
+                                    <small class="text-muted">Cluster saturation or throughput tiles.</small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text">Panel URL</span>
+                                    <input class="form-control grafana-input" type="url" placeholder="https://grafana.example.com/d-solo/..." data-frame-target="grafana-frame-overview">
+                                    <button class="btn btn-outline-primary grafana-load" type="button" data-frame-target="grafana-frame-overview">Embed</button>
+                                    <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-overview">Reset</button>
+                                </div>
+                                <iframe id="grafana-frame-overview" class="grafana-frame" title="Kafka overview" data-default="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=2" src="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=2" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card grafana-card" data-card="lag-tracking">
+                            <div class="card-header">
+                                <div>
+                                    <h5 class="mb-0">Consumer lag</h5>
+                                    <small class="text-muted">Drop in a panel that highlights partition lag.</small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text">Panel URL</span>
+                                    <input class="form-control grafana-input" type="url" placeholder="https://grafana.example.com/d-solo/..." data-frame-target="grafana-frame-lag">
+                                    <button class="btn btn-outline-primary grafana-load" type="button" data-frame-target="grafana-frame-lag">Embed</button>
+                                    <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-lag">Reset</button>
+                                </div>
+                                <iframe id="grafana-frame-lag" class="grafana-frame" title="Consumer lag" data-default="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=4" src="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=4" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card grafana-card" data-card="pipeline">
+                            <div class="card-header">
+                                <div>
+                                    <h5 class="mb-0">Pipeline health</h5>
+                                    <small class="text-muted">Use this slot for ingest-to-eject SLOs.</small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text">Panel URL</span>
+                                    <input class="form-control grafana-input" type="url" placeholder="https://grafana.example.com/d-solo/..." data-frame-target="grafana-frame-pipeline">
+                                    <button class="btn btn-outline-primary grafana-load" type="button" data-frame-target="grafana-frame-pipeline">Embed</button>
+                                    <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-pipeline">Reset</button>
+                                </div>
+                                <iframe id="grafana-frame-pipeline" class="grafana-frame" title="Pipeline health" data-default="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=6" src="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=6" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card grafana-card" data-card="custom">
+                            <div class="card-header">
+                                <div>
+                                    <h5 class="mb-0">Free slot</h5>
+                                    <small class="text-muted">Point this to anything else worth watching.</small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="input-group mb-3">
+                                    <span class="input-group-text">Panel URL</span>
+                                    <input class="form-control grafana-input" type="url" placeholder="https://grafana.example.com/d-solo/..." data-frame-target="grafana-frame-custom">
+                                    <button class="btn btn-outline-primary grafana-load" type="button" data-frame-target="grafana-frame-custom">Embed</button>
+                                    <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-custom">Reset</button>
+                                </div>
+                                <iframe id="grafana-frame-custom" class="grafana-frame" title="Custom panel" data-default="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=8" src="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=8" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="tab-pane fade" role="tabpanel" id="how-to">
+                <div class="row justify-content-center">
+                    <div class="col-lg-8">
+                        <div class="card shadow-sm">
+                            <div class="card-body">
+                                <h4>Bring your own Grafana</h4>
+                                <p class="text-muted">The landing page deliberately stays static. Every embed slot stores its latest URL inside <code>localStorage</code> so you can configure it per environment without redeploying the binary.</p>
+                                <ol>
+                                    <li>Open your Grafana dashboard ➝ Share ➝ Embed and copy the <em>direct</em> panel URL.</li>
+                                    <li>Paste it into a slot above and click <strong>Embed</strong>. The iframe swaps immediately.</li>
+                                    <li>Use <strong>Reset</strong> to jump back to the baked-in defaults.</li>
+                                </ol>
+                                <p class="mb-0">Tip: append <code>&amp;theme=light&amp;refresh=10s</code> to the Grafana URL if you want it to match this page.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="assets/bootstrap/js/bootstrap.min.js"></script>
+    <script src="assets/js/js.js"></script>
+</body>
+</html>

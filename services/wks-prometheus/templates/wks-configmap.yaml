@@ -1,0 +1,13 @@
+{{- if .Values.wks.config.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "wks-prometheus.fullname" . }}-wks-config
+  labels:
+    {{- include "wks-prometheus.wksLabels" . | nindent 4 }}
+  annotations:
+    wolvekafka.io/description: "Runtime configuration for WKS demo"
+data:
+  {{ .Values.wks.config.fileName }}: |
+{{ .Values.wks.config.data | indent 4 }}
+{{- end }}

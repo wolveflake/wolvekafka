@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wks-prometheus.fullname" . }}-wks
+  labels:
+    {{- include "wks-prometheus.wksLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.wks.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "wks-prometheus.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: wks
+  template:
+    metadata:
+      labels:
+        {{- include "wks-prometheus.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: wks
+    spec:
+      {{- if .Values.wks.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range .Values.wks.image.pullSecrets }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: wks
+          image: "{{ .Values.wks.image.repository }}:{{ .Values.wks.image.tag }}"
+          imagePullPolicy: {{ .Values.wks.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.wks.service.port }}
+              protocol: TCP
+          env:
+            {{- range .Values.wks.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.wks.resources | nindent 12 }}
+          {{- if .Values.wks.config.enabled }}
+          volumeMounts:
+            - name: wks-config
+              mountPath: {{ .Values.wks.config.mountPath }}
+              readOnly: true
+          {{- end }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.wks.readinessProbe.path }}
+              port: {{ .Values.wks.readinessProbe.port }}
+            initialDelaySeconds: {{ .Values.wks.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.wks.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.wks.livenessProbe.path }}
+              port: {{ .Values.wks.livenessProbe.port }}
+            initialDelaySeconds: {{ .Values.wks.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.wks.livenessProbe.periodSeconds }}
+      {{- if .Values.wks.config.enabled }}
+      volumes:
+        - name: wks-config
+          configMap:
+            name: {{ include "wks-prometheus.fullname" . }}-wks-config
+            items:
+              - key: {{ .Values.wks.config.fileName }}
+                path: {{ .Values.wks.config.fileName }}
+      {{- end }}

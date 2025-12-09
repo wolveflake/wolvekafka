@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "wks-prometheus.fullname" . }}-prometheus
+  labels:
+    {{- include "wks-prometheus.promLabels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "wks-prometheus.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "wks-prometheus.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: "{{ .Values.prometheus.image.repository }}:{{ .Values.prometheus.image.tag }}"
+          imagePullPolicy: {{ .Values.prometheus.image.pullPolicy }}
+          args:
+            - "--config.file=/etc/prometheus/prometheus.yml"
+            - "--storage.tsdb.retention.time={{ .Values.prometheus.retention }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.prometheus.service.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: prom-config
+              mountPath: /etc/prometheus
+          resources:
+            {{- toYaml .Values.prometheus.resources | nindent 12 }}
+      volumes:
+        - name: prom-config
+          configMap:
+            name: {{ include "wks-prometheus.fullname" . }}-prom-config
