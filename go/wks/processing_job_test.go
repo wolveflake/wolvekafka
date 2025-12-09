@@ -17,23 +17,20 @@
 
 package wks
 
-/*
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
+	model_pb "wolvekafka/proto/model"
 )
 
 // TestExecuteWithRetrySuccess ensures transient failures are retried until success.
@@ -57,13 +54,19 @@ func TestExecuteWithRetrySuccess(t *testing.T) {
 		log:          zap.NewNop().Sugar(),
 	}
 
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
 	attempts := 0
-	err := job.executeWithRetry(context.Background(), func(ctx context.Context) error {
+	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
 		if attempts < 3 {
-			return fmt.Errorf("transient error %d", attempts)
+			return nil, fmt.Errorf("transient error %d", attempts)
 		}
-		return nil
+		return &model_pb.LambdaResponse{}, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, 3, attempts)
@@ -90,11 +93,17 @@ func TestExecuteWithRetryExhausted(t *testing.T) {
 		log:          zap.NewNop().Sugar(),
 	}
 
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
 	attempts := 0
 	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
-	err := job.executeWithRetry(context.Background(), func(ctx context.Context) error {
+	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
-		return errors.New("always fail")
+		return nil, errors.New("always fail")
 	})
 	require.Error(t, err)
 	require.Equal(t, expectedAttempts, attempts)
@@ -124,31 +133,24 @@ func TestExecuteWithRetryDropAction(t *testing.T) {
 		log:          zap.NewNop().Sugar(),
 	}
 
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
 	attempts := 0
 	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
-	err := job.executeWithRetry(context.Background(), func(ctx context.Context) error {
+	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
 		attempts++
-		return errors.New("always fail")
+		return nil, errors.New("always fail")
 	})
 	require.NoError(t, err)
 	require.Equal(t, expectedAttempts, attempts)
 }
 
-// TestDefaultSendEventFuncRetries exercises HTTP retry behaviour end-to-end.
-func TestDefaultSendEventFuncRetries(t *testing.T) {
-	var callCount atomic.Int32
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		_, _ = io.ReadAll(r.Body)
-		attempt := callCount.Add(1)
-		if attempt < 3 {
-			http.Error(w, "fail", http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer ts.Close()
-
+// TestExecuteWithRetryDLQAction confirms DLQ policy sends messages to DLQ after retries exhausted.
+func TestExecuteWithRetryDLQAction(t *testing.T) {
 	consumerCfg := &configs_pb.Consumer{
 		RetryPolicy: &configs_pb.RetryPolicy{
 			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
@@ -158,35 +160,207 @@ func TestDefaultSendEventFuncRetries(t *testing.T) {
 					Multiplier:       2,
 				},
 			},
+			Action: &configs_pb.RetryPolicy_Dlq{
+				Dlq: &configs_pb.DLQAction{
+					Topic: "test-dlq-topic",
+					RetryPolicy: &configs_pb.DLQAction_ExponentialBackoff{
+						ExponentialBackoff: &configs_pb.ExponentialBackoff{
+							InitialBackoffMs: 1,
+							MaxBackoffMs:     2,
+							Multiplier:       2,
+						},
+					},
+				},
+			},
 		},
-		Lambdas: []*configs_pb.Lambda{
-			{Url: ts.URL},
-		},
+	}
+
+	var dlqMessages []*kafka.Message
+	mockProducer := func(msg *kafka.Message) error {
+		dlqMessages = append(dlqMessages, msg)
+		return nil
+	}
+
+	ctx := context.Background()
+	dlqProducer := &kafka.Producer{
+		ProducerFunc: mockProducer,
 	}
 
 	job := &ProcessingJob{
-		consumerCfg:    consumerCfg,
-		consumerName:   "test-consumer",
-		jobId:          4,
-		log:            zap.NewNop().Sugar(),
-		lambdaSelector: NewLambdaSelector(consumerCfg.GetLambdas()),
+		consumerCfg:  consumerCfg,
+		consumerName: "test-consumer",
+		jobId:        4,
+		log:          zap.NewNop().Sugar(),
+		dlqProducer:  dlqProducer,
 	}
 
-	topic := "topic"
-	msgs := []*kafka.Message{
-		{
-			TopicPartition: kafka.TopicPartition{
-				Topic:     &topic,
-				Partition: 0,
-				Offset:    0,
-			},
-			Value: []byte("payload"),
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+			{Key: []byte("key2"), Value: []byte("value2")},
 		},
 	}
 
-	err := defaultSendEventFunc(job, context.Background(), msgs)
+	attempts := 0
+	expectedAttempts := 1 + len(buildBackoffSchedule(consumerCfg.GetRetryPolicy().GetExponentialBackoff()))
+	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+		attempts++
+		return nil, errors.New("always fail")
+	})
+
+	// Should succeed because DLQ succeeded
 	require.NoError(t, err)
-	require.Equal(t, int32(3), callCount.Load())
+	require.Equal(t, expectedAttempts, attempts)
+	require.Len(t, dlqMessages, 2) // Both messages should be sent to DLQ
+
+	// Verify DLQ messages
+	for i, msg := range dlqMessages {
+		require.Equal(t, "test-dlq-topic", *msg.TopicPartition.Topic)
+		require.Equal(t, lambdaReq.Messages[i].Key, msg.Key)
+		require.Equal(t, lambdaReq.Messages[i].Value, msg.Value)
+
+		// Check for error header
+		foundErrorHeader := false
+		for _, header := range msg.Headers {
+			if header.Key == "x-processing-error" {
+				foundErrorHeader = true
+				require.Contains(t, string(header.Value), "always fail")
+				break
+			}
+		}
+		require.True(t, foundErrorHeader, "DLQ message should have error header")
+	}
+}
+
+// TestExecuteWithRetryDLQActionWithRetries confirms DLQ retries work correctly.
+func TestExecuteWithRetryDLQActionWithRetries(t *testing.T) {
+	consumerCfg := &configs_pb.Consumer{
+		RetryPolicy: &configs_pb.RetryPolicy{
+			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
+				ExponentialBackoff: &configs_pb.ExponentialBackoff{
+					InitialBackoffMs: 1,
+					MaxBackoffMs:     2,
+					Multiplier:       2,
+				},
+			},
+			Action: &configs_pb.RetryPolicy_Dlq{
+				Dlq: &configs_pb.DLQAction{
+					Topic: "test-dlq-topic",
+					RetryPolicy: &configs_pb.DLQAction_ExponentialBackoff{
+						ExponentialBackoff: &configs_pb.ExponentialBackoff{
+							InitialBackoffMs: 1,
+							MaxBackoffMs:     4,
+							Multiplier:       2,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var dlqAttempts atomic.Int32
+	mockProducer := func(msg *kafka.Message) error {
+		attempt := dlqAttempts.Add(1)
+		if attempt < 3 {
+			return fmt.Errorf("DLQ send failed attempt %d", attempt)
+		}
+		return nil
+	}
+
+	ctx := context.Background()
+	dlqProducer := &kafka.Producer{
+		ProducerFunc: mockProducer,
+	}
+
+	job := &ProcessingJob{
+		consumerCfg:  consumerCfg,
+		consumerName: "test-consumer",
+		jobId:        5,
+		log:          zap.NewNop().Sugar(),
+		dlqProducer:  dlqProducer,
+	}
+
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
+	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+		return nil, errors.New("processing failed")
+	})
+
+	// Should succeed because DLQ eventually succeeded
+	require.NoError(t, err)
+	require.Equal(t, int32(3), dlqAttempts.Load())
+}
+
+// TestExecuteWithRetryDLQActionFailure confirms failure when DLQ exhausts retries.
+func TestExecuteWithRetryDLQActionFailure(t *testing.T) {
+	consumerCfg := &configs_pb.Consumer{
+		RetryPolicy: &configs_pb.RetryPolicy{
+			RetryPolicy: &configs_pb.RetryPolicy_ExponentialBackoff{
+				ExponentialBackoff: &configs_pb.ExponentialBackoff{
+					InitialBackoffMs: 1,
+					MaxBackoffMs:     2,
+					Multiplier:       2,
+				},
+			},
+			Action: &configs_pb.RetryPolicy_Dlq{
+				Dlq: &configs_pb.DLQAction{
+					Topic: "test-dlq-topic",
+					RetryPolicy: &configs_pb.DLQAction_ExponentialBackoff{
+						ExponentialBackoff: &configs_pb.ExponentialBackoff{
+							InitialBackoffMs: 1,
+							MaxBackoffMs:     2,
+							Multiplier:       2,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var dlqAttempts atomic.Int32
+	mockProducer := func(msg *kafka.Message) error {
+		dlqAttempts.Add(1)
+		return errors.New("DLQ send always fails")
+	}
+
+	ctx := context.Background()
+	dlqProducer := &kafka.Producer{
+		ProducerFunc: mockProducer,
+	}
+
+	job := &ProcessingJob{
+		consumerCfg:  consumerCfg,
+		consumerName: "test-consumer",
+		jobId:        6,
+		log:          zap.NewNop().Sugar(),
+		dlqProducer:  dlqProducer,
+	}
+
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
+	_, err := job.executeWithRetry(ctx, lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+		return nil, errors.New("processing failed")
+	})
+
+	// Should fail because both processing and DLQ failed
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "processing failed and DLQ send failed")
+
+	// DLQ should have attempted retries
+	expectedDLQAttempts := 1 + len(buildBackoffSchedule(&configs_pb.ExponentialBackoff{
+		InitialBackoffMs: 1,
+		MaxBackoffMs:     2,
+		Multiplier:       2,
+	}))
+	require.Equal(t, int32(expectedDLQAttempts), dlqAttempts.Load())
 }
 
 // TestExecuteWithRetryNoPolicy makes sure missing policy returns the original error.
@@ -194,12 +368,18 @@ func TestExecuteWithRetryNoPolicy(t *testing.T) {
 	job := &ProcessingJob{
 		consumerCfg:  &configs_pb.Consumer{},
 		consumerName: "test-consumer",
-		jobId:        5,
+		jobId:        7,
 		log:          zap.NewNop().Sugar(),
 	}
 
-	err := job.executeWithRetry(context.Background(), func(ctx context.Context) error {
-		return errors.New("fail once")
+	lambdaReq := &model_pb.LambdaRequest{
+		Messages: []*model_pb.KafkaMessage{
+			{Key: []byte("key1"), Value: []byte("value1")},
+		},
+	}
+
+	_, err := job.executeWithRetry(context.Background(), lambdaReq, func(ctx context.Context) (*model_pb.LambdaResponse, error) {
+		return nil, errors.New("fail once")
 	})
 	require.EqualError(t, err, "fail once")
 }
@@ -239,4 +419,3 @@ func TestSleepWithContextCancelled(t *testing.T) {
 	err := sleepWithContext(ctx, time.Second)
 	require.ErrorIs(t, err, context.Canceled)
 }
-*/
