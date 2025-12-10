@@ -178,29 +178,22 @@ func NewCompositeServer(ctx context.Context, params Params) (*Server, error) {
 // startCompositeListener would start listeners for both http and gRPC server
 func startCompositeListener(protocol Protocol, params Params) (net.Listener, int, error) {
 	listenerType := "gRPC"
+	listenPort := params.GrpcPort
 	if protocol == PROTO_HTTP {
 		listenerType = "http"
-	}
-	addr, err := network.GetIPAddress()
-	if err != nil {
-		return nil, 0, err
+		listenPort = params.HttpPort
 	}
 
-	var listener net.Listener
-	if protocol == PROTO_HTTP {
-		listener, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(params.HttpPort))))
-	} else {
-		listener, err = net.Listen("tcp", net.JoinHostPort(addr, strconv.Itoa(int(params.GrpcPort))))
-	}
+	listener, err := net.Listen("tcp", net.JoinHostPort("0.0.0.0", strconv.Itoa(listenPort)))
 	if err != nil {
-		return nil, 0, errors.Wrapf(err, "fails to listen address: %v for listener type: %s", addr, listenerType)
+		return nil, 0, errors.Wrapf(err, "fails to listen for listener type: %s", listenerType)
 	}
 
-	addr = listener.Addr().String()
-	logger.S().Infof("%s server listening addr: %v", listenerType, addr)
-	_, listenerPortStr, err := net.SplitHostPort(addr)
+	listenAddr := listener.Addr().String()
+	logger.S().Infof("%s server listening addr: %v", listenerType, listenAddr)
+	_, listenerPortStr, err := net.SplitHostPort(listenAddr)
 	if err != nil {
-		return nil, 0, errors.Wrapf(err, "failed to parse address:%v for listener type: %s", addr, listenerType)
+		return nil, 0, errors.Wrapf(err, "failed to parse address:%v for listener type: %s", listenAddr, listenerType)
 	}
 	listenerPort, err := strconv.Atoi(listenerPortStr)
 	if err != nil {

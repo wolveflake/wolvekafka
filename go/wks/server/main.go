@@ -43,8 +43,13 @@ func main() {
 	}
 
 	ctx := context.Background()
+	// Initialize the composite server (which configures OpenTelemetry) before
+	// starting the WKS service so the instrumentation binds to the real meter.
+	srv := server.SetUpServer(ctx, server.PROTO_GRPC, *serviceID)
+
 	wksService, err := wks.NewWolveKafkaService(ctx, wks.WolveKafkaParams{Config: cfg})
 	if err != nil {
+		srv.Stop()
 		logger.S().Fatalf("failed to start WKS service: %v", err)
 	}
 	defer func() {
@@ -52,8 +57,6 @@ func main() {
 			logger.S().Warnf("failed to stop WKS service: %v", closeErr)
 		}
 	}()
-
-	srv := server.SetUpServer(ctx, server.PROTO_GRPC, *serviceID)
 	if err := srv.Serve(); err != nil {
 		logger.S().Fatalf("server stopped: %v", err)
 	}

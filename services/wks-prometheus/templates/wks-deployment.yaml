@@ -29,9 +29,13 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $imageRef := printf "%s:%s" .Values.image.repository .Values.image.tag -}}
+      {{- if .Values.image.digest }}
+        {{- $imageRef = printf "%s@%s" .Values.image.repository .Values.image.digest -}}
+      {{- end }}
       containers:
         - name: {{ include "wks-prometheus.name" . }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ $imageRef }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Values.config.enabled }}
           args:

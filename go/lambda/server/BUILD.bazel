@@ -8,6 +8,17 @@ load("//go/wks/bazel_util:oci_push_do.bzl", "oci_push_do")
 go_library(
     name = "server_lib",
     srcs = ["main.go"],
+    embedsrcs = [
+        "landing/assets/bootstrap/css/bootstrap.min.css",
+        "landing/assets/bootstrap/js/bootstrap.min.js",
+        "landing/assets/css/Footer-Basic-icons.css",
+        "landing/assets/css/iframe.css",
+        "landing/assets/img/wolveflak_io_transparent.png",
+        "landing/assets/img/wolveflake_io.png",
+        "landing/assets/img/wolveflake_io_banner.jpg",
+        "landing/assets/js/js.js",
+        "landing/index.html",
+    ],
     importpath = "wolvekafka/go/lambda/server",
     visibility = ["//visibility:private"],
     deps = [
