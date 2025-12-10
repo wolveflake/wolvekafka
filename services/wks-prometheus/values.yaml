@@ -5,7 +5,8 @@ fullnameOverride: ""
 image:
   repository: ghcr.io/wolveflake/wks
   tag: latest
-  pullPolicy: IfNotPresent
+  digest: ""
+  pullPolicy: Always
   pullSecrets:
     - name: demo-regcred
 
