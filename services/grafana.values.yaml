@@ -1,0 +1,29 @@
+grafana.ini:
+  security:
+    allow_embedding: true
+    cookie_samesite: none
+    cookie_secure: false
+  server:
+    domain: grafana-grafana.wks-demo.svc.cluster.local
+    root_url: "%(protocol)s://%(domain)s:%(http_port)s/"
+
+admin:
+  existingSecret: ""
+  user: admin
+  password: admin
+
+serviceAccount:
+  create: true
+
+persistence:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+testFramework:
+  enabled: false
+

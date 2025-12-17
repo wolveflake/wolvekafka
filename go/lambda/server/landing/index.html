@@ -26,14 +26,14 @@
                         <div class="card grafana-card" data-card="overview">
                             <div class="card-header">
                                 <div>
-                                    <h5 class="mb-0">Kafka overview</h5>
-                                    <small class="text-muted">Cluster saturation or throughput tiles.</small>
+                                    <h5 class="mb-0">Messages Processed/s</h5>
+                                    <small class="text-muted">Throughput per consumer (match data source to your Grafana panel).</small>
                                 </div>
                             </div>
                             <div class="card-body">
                                 <div class="input-group mb-3">
                                     <span class="input-group-text">Panel URL</span>
-                                    <input class="form-control grafana-input" type="url" placeholder="https://grafana.example.com/d-solo/..." data-frame-target="grafana-frame-overview">
+                                    <input class="form-control grafana-input" id="grafana-url-input" type="url" value="http://grafana-grafana.wks-demo.svc.cluster.local:3000/d-solo/adpmcvw/wks?orgId=1&panelId=2" data-frame-target="grafana-frame-overview">
                                     <button class="btn btn-outline-primary grafana-load" type="button" data-frame-target="grafana-frame-overview">Embed</button>
                                     <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-overview">Reset</button>
                                 </div>
@@ -45,8 +45,8 @@
                         <div class="card grafana-card" data-card="lag-tracking">
                             <div class="card-header">
                                 <div>
-                                    <h5 class="mb-0">Consumer lag</h5>
-                                    <small class="text-muted">Drop in a panel that highlights partition lag.</small>
+                                    <h5 class="mb-0">Avg Kafka Batch Size (bytes)</h5>
+                                    <small class="text-muted">Embed the panel showing average batch size over time.</small>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -64,8 +64,8 @@
                         <div class="card grafana-card" data-card="pipeline">
                             <div class="card-header">
                                 <div>
-                                    <h5 class="mb-0">Pipeline health</h5>
-                                    <small class="text-muted">Use this slot for ingest-to-eject SLOs.</small>
+                                    <h5 class="mb-0">Active Consumer Groups</h5>
+                                    <small class="text-muted">Embed the gauge showing live consumer groups.</small>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -83,8 +83,8 @@
                         <div class="card grafana-card" data-card="custom">
                             <div class="card-header">
                                 <div>
-                                    <h5 class="mb-0">Free slot</h5>
-                                    <small class="text-muted">Point this to anything else worth watching.</small>
+                                    <h5 class="mb-0">Subscriber Execution Latency (p95)</h5>
+                                    <small class="text-muted">Embed the lambda metric showing P95 execution time.</small>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -95,6 +95,46 @@
                                     <button class="btn btn-outline-secondary grafana-reset" type="button" data-frame-target="grafana-frame-custom">Reset</button>
                                 </div>
                                 <iframe id="grafana-frame-custom" class="grafana-frame" title="Custom panel" data-default="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=8" src="https://play.grafana.org/d-solo/000000012/grafana-play-home?orgId=1&amp;panelId=8" loading="lazy" allowfullscreen></iframe>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <div class="card shadow-sm">
+                            <div class="card-header d-flex flex-column flex-md-row justify-content-between align-items-md-center">
+                                <div>
+                                    <h5 class="mb-0">Seed the demo topic</h5>
+                                    <small class="text-muted">Kick off the built-in Kafka producer without leaving this page.</small>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <form id="demo-producer-form" class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="producer-topic">Topic</label>
+                                        <input class="form-control" id="producer-topic" name="topic" type="text" value="demo-topic" required>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="producer-bootstrap">Bootstrap servers</label>
+                                        <input class="form-control" id="producer-bootstrap" name="bootstrap_servers" type="text" placeholder="demo-kafka-kafka:9092">
+                                        <small class="text-muted">Leave blank to use the pod default.</small>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label" for="producer-count">Count</label>
+                                        <input class="form-control" id="producer-count" name="count" type="number" min="1" max="200" value="10">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label" for="producer-interval">Interval (s)</label>
+                                        <input class="form-control" id="producer-interval" name="interval_seconds" type="number" step="0.1" min="0" value="0.5">
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label" for="producer-message">Message</label>
+                                        <input class="form-control" id="producer-message" name="message" type="text" value="Hello from the WolveKafka demo!">
+                                    </div>
+                                    <div class="col-12 d-flex gap-2">
+                                        <button class="btn btn-primary" type="submit" data-role="producer-submit">Start producing</button>
+                                        <button class="btn btn-outline-secondary" type="button" data-role="producer-reset">Reset</button>
+                                    </div>
+                                </form>
+                                <div class="alert d-none mt-3" role="alert" id="demo-producer-status"></div>
                             </div>
                         </div>
                     </div>

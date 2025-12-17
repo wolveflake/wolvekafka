@@ -59,6 +59,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/", landingServer)
 	mux.HandleFunc("/hello", helloHandler)
+	mux.HandleFunc("/api/demo-producer", newDemoProducerHandler())
 	mux.HandleFunc("/health", healthHandler)
 
 	srv := &http.Server{Addr: addr, Handler: mux}
