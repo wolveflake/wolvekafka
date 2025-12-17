@@ -22,21 +22,21 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProducerProduceUsesProducerFunc(t *testing.T) {
 	ctx := context.Background()
-	msg := &kafka.Message{
+	msg := &kgo.Record{
 		Value: []byte("payload"),
 	}
 
-	var captured *kafka.Message
+	var captured *Message
 	producer := newProducer(ctx, ProducerParams{
 		Name: "test-producer",
-		ProducerFunc: func(m *kafka.Message) error {
+		ProducerFunc: func(m *Message) error {
 			captured = m
 			return nil
 		},
@@ -53,12 +53,12 @@ func TestProducerProducePropagatesProducerFuncError(t *testing.T) {
 	expectedErr := errors.New("produce failure")
 	producer := newProducer(ctx, ProducerParams{
 		Name: "test-producer",
-		ProducerFunc: func(m *kafka.Message) error {
+		ProducerFunc: func(m *Message) error {
 			return expectedErr
 		},
 	})
 
-	err := producer.Produce(ctx, &kafka.Message{})
+	err := producer.Produce(ctx, &kgo.Record{})
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, expectedErr)

@@ -182,12 +182,10 @@ func (r *RetryPolicy) sendToDLQ(ctx context.Context, lambdaReq *model_pb.LambdaR
 	// Convert lambda request messages to DLQ messages
 	for _, msg := range lambdaReq.GetMessages() {
 		dlqMsg := &kafka.Message{
-			TopicPartition: kafka.TopicPartition{
-				Topic:     &dlqTopic,
-				Partition: kafka.PartitionAny,
-			},
-			Key:   msg.GetKey(),
-			Value: msg.GetValue(),
+			Topic:     dlqTopic,
+			Partition: kafka.PartitionAny,
+			Key:       msg.GetKey(),
+			Value:     msg.GetValue(),
 		}
 
 		// Copy headers from original message

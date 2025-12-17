@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,9 +44,11 @@ func TestCustomPoll(t *testing.T) {
 
 	// Simulate a single message flowing through the stub client.
 	topic := "test-topic"
-	fakeConsumer.enqueue(&kafka.Message{
-		TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: 0, Offset: 1},
-		Value:          []byte("test-message"),
+	fakeConsumer.enqueue(&kgo.Record{
+		Topic:     topic,
+		Partition: 0,
+		Offset:    1,
+		Value:     []byte("test-message"),
 	})
 
 	select {
@@ -75,8 +77,8 @@ func TestPollBatchesByMessageCount(t *testing.T) {
 	require.NoError(t, err)
 
 	// Feed two messages; they should be delivered together because of the count threshold.
-	fakeConsumer.enqueue(&kafka.Message{Value: []byte("one")})
-	fakeConsumer.enqueue(&kafka.Message{Value: []byte("two")})
+	fakeConsumer.enqueue(&kgo.Record{Value: []byte("one")})
+	fakeConsumer.enqueue(&kgo.Record{Value: []byte("two")})
 
 	select {
 	case batch := <-msgChan:
@@ -107,8 +109,8 @@ func TestPollBatchesBySize(t *testing.T) {
 	require.NoError(t, err)
 
 	payload := []byte("four")
-	fakeConsumer.enqueue(&kafka.Message{Value: payload})
-	fakeConsumer.enqueue(&kafka.Message{Value: []byte("next")})
+	fakeConsumer.enqueue(&kgo.Record{Value: payload})
+	fakeConsumer.enqueue(&kgo.Record{Value: []byte("next")})
 
 	select {
 	case batch := <-msgChan:
@@ -141,7 +143,7 @@ func TestPollBatchesByWaitDuration(t *testing.T) {
 	require.NoError(t, err)
 
 	start := time.Now()
-	fakeConsumer.enqueue(&kafka.Message{Value: []byte("delayed")})
+	fakeConsumer.enqueue(&kgo.Record{Value: []byte("delayed")})
 
 	select {
 	case batch := <-msgChan:
@@ -157,21 +159,21 @@ func TestPollBatchesByWaitDuration(t *testing.T) {
 }
 
 type fakeKafkaConsumer struct {
-	events chan kafka.Event
+	events chan Event
 	closed bool
 }
 
 func newFakeKafkaConsumer() *fakeKafkaConsumer {
 	return &fakeKafkaConsumer{
-		events: make(chan kafka.Event, 10),
+		events: make(chan Event, 10),
 	}
 }
 
-func (f *fakeKafkaConsumer) enqueue(event kafka.Event) {
+func (f *fakeKafkaConsumer) enqueue(event Event) {
 	f.events <- event
 }
 
-func (f *fakeKafkaConsumer) Poll(ms int) kafka.Event {
+func (f *fakeKafkaConsumer) Poll(ms int) Event {
 	select {
 	case ev := <-f.events:
 		return ev
@@ -189,6 +191,6 @@ func (f *fakeKafkaConsumer) Close() error {
 	return nil
 }
 
-func (f *fakeKafkaConsumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
+func (f *fakeKafkaConsumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 	return nil, nil
 }

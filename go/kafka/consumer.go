@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
 	"wolvekafka/go/common/logger"
@@ -42,7 +42,7 @@ const (
 
 // KafkaConsumerClient is the minimal surface area required from a Kafka consumer implementation.
 type KafkaConsumerClient interface {
-	Poll(int) kafka.Event
+	Poll(int) Event
 	Close() error
 	CommitMessage(*Message) ([]TopicPartition, error)
 }
@@ -58,6 +58,9 @@ type Consumer struct {
 
 	// Kafka consumer instance.
 	kafkaConsumer KafkaConsumerClient
+
+	// franz-go client (when not using test stub).
+	franzClient *kgo.Client
 
 	// logger.
 	log *zap.SugaredLogger
@@ -103,28 +106,21 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 		return nil, fmt.Errorf("cluster configuration is required")
 	}
 
-	bootstrapServers := ""
-	for _, server := range params.Cluster.BootstrapServers {
-		bootstrapServers += "," + server
-	}
-	configMap := &kafka.ConfigMap{
-		"bootstrap.servers": bootstrapServers,
-		"group.id":          params.Name,
-		"auto.offset.reset": "earliest",
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(params.Cluster.BootstrapServers...),
+		kgo.ConsumerGroup(params.Name),
+		kgo.ConsumeTopics(params.Topics...),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 	}
 
-	kafkaConsumer, err := kafka.NewConsumer(configMap)
+	franzClient, err := kgo.NewClient(opts...)
 	if err != nil {
 		consumer.log.Errorf("Failed to create %v consumer: %v", params.Name, err)
 		return nil, err
 	}
 
-	if err := kafkaConsumer.SubscribeTopics(params.Topics, nil); err != nil {
-		consumer.log.Errorf("Failed to subscribe to %v topics, %s consumer: %v", params.Topics, params.Name, err)
-		return nil, err
-	}
-
-	consumer.kafkaConsumer = kafkaConsumer
+	consumer.franzClient = franzClient
+	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, pollDuration: time.Duration(consumer.poolDurationMs) * time.Millisecond}
 
 	return consumer, nil
 }
@@ -207,7 +203,7 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 			event := c.kafkaConsumer.Poll(c.poolDurationMs)
 			if event != nil {
 				switch e := event.(type) {
-				case *kafka.Message:
+				case *Message:
 					batch = append(batch, e)
 					batchBytes += approximateMessageSize(e)
 
@@ -219,12 +215,10 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 						(c.batchMaxBytes > 0 && batchBytes >= c.batchMaxBytes) {
 						flush()
 					}
-				case kafka.Error:
+				case error:
 					c.log.Errorf("Kafka poll error: %v", e)
-					if e.Code() == kafka.ErrAllBrokersDown {
-						flush()
-						return
-					}
+					flush()
+					return
 				default:
 					// ignore other events
 				}
@@ -239,7 +233,7 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 	return msgChan, nil
 }
 
-func approximateMessageSize(msg *kafka.Message) int {
+func approximateMessageSize(msg *Message) int {
 	if msg == nil {
 		return 0
 	}
@@ -254,6 +248,9 @@ func approximateMessageSize(msg *kafka.Message) int {
 
 // Close closes the Kafka consumer.
 func (c *Consumer) Close() error {
+	if c.franzClient != nil {
+		c.franzClient.Close()
+	}
 	if c.kafkaConsumer == nil {
 		return nil
 	}
@@ -266,4 +263,58 @@ func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 		return nil, fmt.Errorf("kafka consumer is not initialized")
 	}
 	return c.kafkaConsumer.CommitMessage(msg)
+}
+
+// franzConsumerAdapter adapts franz-go client to the KafkaConsumerClient interface.
+type franzConsumerAdapter struct {
+	client       *kgo.Client
+	pollDuration time.Duration
+}
+
+func (f *franzConsumerAdapter) Poll(ms int) Event {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ms)*time.Millisecond)
+	defer cancel()
+
+	fetches := f.client.PollFetches(ctx)
+	if fetches.IsClientClosed() {
+		return fmt.Errorf("client closed")
+	}
+
+	errs := fetches.Errors()
+	if len(errs) > 0 {
+		return errs[0].Err
+	}
+
+	iter := fetches.RecordIter()
+	if iter.Done() {
+		return nil
+	}
+
+	record := iter.Next()
+	return record
+}
+
+func (f *franzConsumerAdapter) Close() error {
+	f.client.Close()
+	return nil
+}
+
+func (f *franzConsumerAdapter) CommitMessage(msg *Message) ([]TopicPartition, error) {
+	if msg == nil {
+		return nil, fmt.Errorf("message is required")
+	}
+
+	f.client.MarkCommitRecords(msg)
+	if err := f.client.CommitMarkedOffsets(context.Background()); err != nil {
+		return nil, err
+	}
+
+	topic := msg.Topic
+	return []TopicPartition{
+		{
+			Topic:     &topic,
+			Partition: msg.Partition,
+			Offset:    msg.Offset,
+		},
+	}, nil
 }

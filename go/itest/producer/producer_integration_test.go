@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/stretchr/testify/require"
 
 	kafka_fixture "wolvekafka/go/itest/fixture"
@@ -37,25 +37,22 @@ func TestProducerPublishesMessages(t *testing.T) {
 	topic := fmt.Sprintf("itest-producer-topic-%d", time.Now().UnixNano())
 	payload := []byte("producer integration payload")
 
-	require.NoError(t, producer.Produce(ctx, &ckafka.Message{
-		TopicPartition: ckafka.TopicPartition{
-			Topic:     &topic,
-			Partition: ckafka.PartitionAny,
-		},
-		Value: payload,
+	require.NoError(t, producer.Produce(ctx, &kgo.Record{
+		Topic:     topic,
+		Partition: -1, // any partition
+		Value:     payload,
 	}))
 
-	consumer, err := ckafka.NewConsumer(&ckafka.ConfigMap{
-		"bootstrap.servers": fixture.BootstrapHost(),
-		"group.id":          fmt.Sprintf("itest-consumer-%d", time.Now().UnixNano()),
-		"auto.offset.reset": "earliest",
-	})
+	consumer, err := kgo.NewClient(
+		kgo.SeedBrokers(fixture.BootstrapHost()),
+		kgo.ConsumerGroup(fmt.Sprintf("itest-consumer-%d", time.Now().UnixNano())),
+		kgo.ConsumeTopics(topic),
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = consumer.Close()
+		consumer.Close()
 	})
-
-	require.NoError(t, consumer.SubscribeTopics([]string{topic}, nil))
 
 	deadline := time.Now().Add(30 * time.Second)
 	for {
@@ -64,16 +61,26 @@ func TestProducerPublishesMessages(t *testing.T) {
 			t.Fatalf("timed out waiting for message on %s", topic)
 		}
 
-		msg, err := consumer.ReadMessage(timeout)
-		if err != nil {
-			if kafkaErr, ok := err.(ckafka.Error); ok && kafkaErr.Code() == ckafka.ErrTimedOut {
-				continue
-			}
-			t.Fatalf("failed to read message: %v", err)
+		fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout)
+		fetches := consumer.PollFetches(fetchCtx)
+		fetchCancel()
+
+		if fetches.IsClientClosed() {
+			t.Fatal("client closed unexpectedly")
 		}
 
-		require.Equal(t, topic, *msg.TopicPartition.Topic)
-		require.Equal(t, payload, msg.Value)
-		break
+		if len(fetches.Errors()) > 0 {
+			t.Fatalf("fetch errors: %v", fetches.Errors())
+		}
+
+		iter := fetches.RecordIter()
+		if !iter.Done() {
+			msg := iter.Next()
+			require.Equal(t, topic, msg.Topic)
+			require.Equal(t, payload, msg.Value)
+			break
+		}
+
+		time.Sleep(100 * time.Millisecond)
 	}
 }

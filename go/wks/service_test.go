@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/stretchr/testify/assert"
 
 	"wolvekafka/go/configs"
@@ -93,13 +92,10 @@ func TestBasic(t *testing.T) {
 	topic := "topic1"
 	// send a test message
 	testMsg := &kafka.Message{
-
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: 0,
-			Offset:    0,
-		},
-		Value: []byte("test message"),
+		Topic:     topic,
+		Partition: 0,
+		Offset:    0,
+		Value:     []byte("test message"),
 	}
 	clientSource.Emit(testMsg)
 
@@ -183,13 +179,10 @@ func TestHttpLambda(t *testing.T) {
 	topic := "topic1"
 	// send a test message
 	testMsg := &kafka.Message{
-
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: 0,
-			Offset:    0,
-		},
-		Value: []byte("test message"),
+		Topic:     topic,
+		Partition: 0,
+		Offset:    0,
+		Value:     []byte("test message"),
 	}
 	clientSource.Emit(testMsg)
 
@@ -215,7 +208,7 @@ func newStubKafkaClientSource() *stubKafkaClientSource {
 }
 
 func (s *stubKafkaClientSource) Emit(msg *kafka.Message) {
-	s.events <- (*ckafka.Message)(msg)
+	s.events <- msg
 }
 
 func (s *stubKafkaClientSource) NewClient() kafka.KafkaConsumerClient {

@@ -210,7 +210,7 @@ func TestRetryPolicyExecuteWithRetryDLQAction(t *testing.T) {
 
 	// Verify DLQ messages
 	for i, msg := range dlqMessages {
-		require.Equal(t, "test-dlq-topic", *msg.TopicPartition.Topic)
+		require.Equal(t, "test-dlq-topic", msg.Topic)
 		require.Equal(t, lambdaReq.Messages[i].Key, msg.Key)
 		require.Equal(t, lambdaReq.Messages[i].Value, msg.Value)
 

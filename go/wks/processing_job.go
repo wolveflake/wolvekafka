@@ -235,9 +235,9 @@ func (c *ProcessingJob) Execute() {
 					"[%v:%v] Consumed message from topic %s [%d] at offset %v",
 					c.consumerName,
 					c.jobId,
-					*msg.TopicPartition.Topic,
-					msg.TopicPartition.Partition,
-					msg.TopicPartition.Offset)
+					msg.Topic,
+					msg.Partition,
+					msg.Offset)
 			}
 
 			// convert kafka messages to lambda request.
@@ -295,7 +295,7 @@ func (c *ProcessingJob) Execute() {
 						span.RecordError(err)
 					} else {
 						successfulCommits++
-						c.log.Infof("[%v:%v] committed message offset: %v", c.consumerName, c.jobId, msg.TopicPartition.Offset)
+						c.log.Infof("[%v:%v] committed message offset: %v", c.consumerName, c.jobId, msg.Offset)
 					}
 				}
 

@@ -40,11 +40,6 @@ var (
 
 // kafkaMsgToProto converts a single Kafka message to its protobuf representation.
 func kafkaMsgToProto(msg *kafka.Message) *model_pb.KafkaMessage {
-	var topic string
-	if msg.TopicPartition.Topic != nil {
-		topic = *msg.TopicPartition.Topic
-	}
-
 	headers := make([]*model_pb.Header, 0, len(msg.Headers))
 	for _, header := range msg.Headers {
 		headers = append(headers, &model_pb.Header{
@@ -54,9 +49,9 @@ func kafkaMsgToProto(msg *kafka.Message) *model_pb.KafkaMessage {
 	}
 
 	return &model_pb.KafkaMessage{
-		Topic:     topic,
-		Partition: int32(msg.TopicPartition.Partition),
-		Offset:    int64(msg.TopicPartition.Offset),
+		Topic:     msg.Topic,
+		Partition: int32(msg.Partition),
+		Offset:    int64(msg.Offset),
 		Headers:   headers,
 		Key:       msg.Key,
 		Value:     msg.Value,
@@ -109,17 +104,12 @@ func ResponseMessageToKafkaMessage(policy *configs_pb.OutputKafkaPolicy, msg *mo
 		value = emptyJsonMessageValue
 	}
 
-	tp := kafka.TopicPartition{
-		Topic: &policy.Topic,
-		// TODO(13): make it configurable.
-		Partition: kafka.PartitionAny,
-	}
-
 	// Construct the kafka.Message
 	return &kafka.Message{
-		TopicPartition: tp,
-		Value:          value,
-		Timestamp:      time.Now(), // Optional: Message timestamp
+		Topic:     policy.Topic,
+		Partition: kafka.PartitionAny,
+		Value:     value,
+		Timestamp: time.Now(), // Optional: Message timestamp
 	}, nil
 }
 

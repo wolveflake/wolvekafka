@@ -7,7 +7,7 @@ go_test(
         "//go/itest/fixture",
         "//go/kafka",
         "//proto/configs",
-        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kgo",
     ],
 )

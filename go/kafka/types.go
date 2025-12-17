@@ -18,14 +18,23 @@
 package kafka
 
 import (
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Type aliases for Kafka types.
 
-type Message = kafka.Message
-type TopicPartition = kafka.TopicPartition
-type Header = kafka.Header
-type Event = kafka.Event
+type Message = kgo.Record
+type Header = kgo.RecordHeader
 
-const PartitionAny = kafka.PartitionAny
+// TopicPartition represents a topic and partition.
+type TopicPartition struct {
+	Topic     *string
+	Partition int32
+	Offset    int64
+	Error     error
+}
+
+// Event is used for compatibility with the previous Kafka client interface.
+type Event interface{}
+
+const PartitionAny int32 = -1
