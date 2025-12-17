@@ -51,11 +51,9 @@ func TestProducerAndConsumerEndToEnd(t *testing.T) {
 	})
 
 	err = producer.Produce(ctx, &kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: kafka.PartitionAny,
-		},
-		Value: payload,
+		Topic:     topic,
+		Partition: kafka.PartitionAny,
+		Value:     payload,
 	})
 	require.NoError(t, err)
 
@@ -72,7 +70,7 @@ func TestProducerAndConsumerEndToEnd(t *testing.T) {
 			t.Fatalf("message channel closed before receiving message")
 		}
 		msg := msgs[0]
-		require.Equal(t, topic, *msg.TopicPartition.Topic)
+		require.Equal(t, topic, msg.Topic)
 		require.Equal(t, payload, msg.Value)
 
 		_, err := consumer.CommitMessage(msg)

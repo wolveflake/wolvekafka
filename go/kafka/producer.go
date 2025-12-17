@@ -21,14 +21,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
 	"wolvekafka/go/common/logger"
 	configs_pb "wolvekafka/proto/configs"
 )
 
-type ProducerFunc func(msg *kafka.Message) error
+type ProducerFunc func(msg *Message) error
 
 type Producer struct {
 	// producer name.
@@ -38,7 +38,7 @@ type Producer struct {
 	ctxCancel context.CancelFunc
 
 	// Kafka producer instance.
-	kafkaProducer *kafka.Producer
+	kafkaProducer *kgo.Client
 
 	// logger.
 	log *zap.SugaredLogger
@@ -61,27 +61,24 @@ type ProducerParams struct {
 func NewProducer(ctx context.Context, params ProducerParams) (*Producer, error) {
 	producer := newProducer(ctx, params)
 
-	bootstrapServers := ""
-	for _, server := range params.Cluster.BootstrapServers {
-		bootstrapServers += "," + server
-	}
-
-	configMap := &kafka.ConfigMap{
-		"bootstrap.servers": bootstrapServers,
-		"client.id":         params.Name,
-		// TODO(13): add support for other acks.
-		"acks": "all", // Require all brokers to acknowledge the message
+	if params.Cluster == nil {
+		return nil, fmt.Errorf("cluster configuration is required")
 	}
 
 	// create Kafka producer.
-	kafkaProducer, err := kafka.NewProducer(configMap)
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(params.Cluster.BootstrapServers...),
+		kgo.ClientID(params.Name),
+		kgo.RequiredAcks(kgo.AllISRAcks()), // Require all in-sync replicas to acknowledge
+	}
+
+	kafkaProducer, err := kgo.NewClient(opts...)
 	if err != nil {
 		producer.log.Errorf("Failed to create %v producer: %v", params.Name, err)
 		return nil, err
 	}
 	producer.kafkaProducer = kafkaProducer
 
-	//
 	go func() {
 		select {
 		case <-producer.ctx.Done():
@@ -108,7 +105,7 @@ func newProducer(ctx context.Context, params ProducerParams) *Producer {
 }
 
 // Produce sends a message to Kafka.
-func (c *Producer) Produce(ctx context.Context, msg *kafka.Message) error {
+func (c *Producer) Produce(ctx context.Context, msg *Message) error {
 	if c.ProducerFunc != nil {
 		return c.ProducerFunc(msg)
 	}
@@ -121,25 +118,13 @@ func (c *Producer) Produce(ctx context.Context, msg *kafka.Message) error {
 		return fmt.Errorf("message is required")
 	}
 
-	deliveryChan := make(chan kafka.Event, 1)
-	defer close(deliveryChan)
-
-	if err := c.kafkaProducer.Produce(msg, deliveryChan); err != nil {
+	// Use ProduceSync for synchronous production with delivery guarantees
+	result := c.kafkaProducer.ProduceSync(ctx, msg)
+	if err := result.FirstErr(); err != nil {
 		return err
 	}
 
-	select {
-	case <-c.ctx.Done():
-		return c.ctx.Err()
-	case <-ctx.Done():
-		return ctx.Err()
-	case e := <-deliveryChan:
-		m, ok := e.(*kafka.Message)
-		if !ok {
-			return fmt.Errorf("unexpected delivery event type %T", e)
-		}
-		return m.TopicPartition.Error
-	}
+	return nil
 }
 
 // Close closes the Kafka producer.

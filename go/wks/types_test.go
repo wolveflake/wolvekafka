@@ -67,14 +67,12 @@ func TestKafkaMsgToProto(t *testing.T) {
 	}
 
 	msg := &kafka.Message{
-		TopicPartition: kafka.TopicPartition{
-			Topic:     &topic,
-			Partition: 3,
-			Offset:    42,
-		},
-		Headers: headers,
-		Key:     []byte("key"),
-		Value:   []byte("value"),
+		Topic:     topic,
+		Partition: 3,
+		Offset:    42,
+		Headers:   headers,
+		Key:       []byte("key"),
+		Value:     []byte("value"),
 	}
 
 	protoMsg := kafkaMsgToProto(msg)
@@ -96,22 +94,18 @@ func TestKafkaMsgsToLambdaRequest(t *testing.T) {
 	topicB := "topic-b"
 	msgs := []*kafka.Message{
 		{
-			TopicPartition: kafka.TopicPartition{
-				Topic:     &topicA,
-				Partition: 0,
-				Offset:    10,
-			},
-			Key:   []byte("key-a"),
-			Value: []byte("value-a"),
+			Topic:     topicA,
+			Partition: 0,
+			Offset:    10,
+			Key:       []byte("key-a"),
+			Value:     []byte("value-a"),
 		},
 		{
-			TopicPartition: kafka.TopicPartition{
-				Topic:     &topicB,
-				Partition: 1,
-				Offset:    20,
-			},
-			Key:   []byte("key-b"),
-			Value: []byte("value-b"),
+			Topic:     topicB,
+			Partition: 1,
+			Offset:    20,
+			Key:       []byte("key-b"),
+			Value:     []byte("value-b"),
 		},
 	}
 
@@ -121,13 +115,9 @@ func TestKafkaMsgsToLambdaRequest(t *testing.T) {
 	for i, kafkaMsg := range msgs {
 		protoMsg := lambdaReq.Messages[i]
 		require.NotNil(t, protoMsg)
-		expectedTopic := ""
-		if kafkaMsg.TopicPartition.Topic != nil {
-			expectedTopic = *kafkaMsg.TopicPartition.Topic
-		}
-		assert.Equal(t, expectedTopic, protoMsg.GetTopic())
-		assert.Equal(t, kafkaMsg.TopicPartition.Partition, protoMsg.GetPartition())
-		assert.Equal(t, int64(kafkaMsg.TopicPartition.Offset), protoMsg.GetOffset())
+		assert.Equal(t, kafkaMsg.Topic, protoMsg.GetTopic())
+		assert.Equal(t, kafkaMsg.Partition, protoMsg.GetPartition())
+		assert.Equal(t, int64(kafkaMsg.Offset), protoMsg.GetOffset())
 		assert.Equal(t, kafkaMsg.Key, protoMsg.GetKey())
 		assert.Equal(t, kafkaMsg.Value, protoMsg.GetValue())
 	}
@@ -166,9 +156,8 @@ func TestResponseMessageToKafkaMessage(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, msg)
-	require.NotNil(t, msg.TopicPartition.Topic)
-	assert.Equal(t, policy.Topic, *msg.TopicPartition.Topic)
-	assert.Equal(t, kafka.PartitionAny, msg.TopicPartition.Partition)
+	assert.Equal(t, policy.Topic, msg.Topic)
+	assert.Equal(t, kafka.PartitionAny, msg.Partition)
 	assert.Equal(t, respMsg.GetMessage(), msg.Value)
 }
 

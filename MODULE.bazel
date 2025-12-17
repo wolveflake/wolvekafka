@@ -24,11 +24,6 @@ register_toolchains("@jq_toolchains//:all")
 
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//:go.mod")
-go_deps.module_override(
-    patch_strip = 1,
-    patches = ["//thirdparty/patches:confluent_kafka_vendor.patch"],
-    path = "github.com/confluentinc/confluent-kafka-go/v2",
-)
 
 #go_deps.module(
 #    path = "google.golang.org/grpc",
@@ -39,13 +34,13 @@ go_deps.module_override(
 # All *direct* Go dependencies of the module have to be listed explicitly.
 use_repo(
     go_deps,
-    "com_github_confluentinc_confluent_kafka_go_v2",
     "com_github_dropbox_godropbox",
     "com_github_google_uuid",
     "com_github_gorilla_mux",
     "com_github_prometheus_client_golang",
     "com_github_stretchr_testify",
     "com_github_twmb_franz_go",
+    "com_github_twmb_franz_go_pkg_kadm",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_prometheus",
     "io_opentelemetry_go_otel_exporters_stdout_stdoutlog",

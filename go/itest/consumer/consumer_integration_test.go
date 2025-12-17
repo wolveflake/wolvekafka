@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/stretchr/testify/require"
 
 	kafka_fixture "wolvekafka/go/itest/fixture"
@@ -59,7 +59,7 @@ func TestConsumerReceivesMessages(t *testing.T) {
 		}
 
 		msg := msgs[0]
-		require.Equal(t, topic, *msg.TopicPartition.Topic)
+		require.Equal(t, topic, msg.Topic)
 		require.Equal(t, payload, msg.Value)
 
 		_, err := consumer.CommitMessage(msg)
@@ -71,30 +71,19 @@ func TestConsumerReceivesMessages(t *testing.T) {
 func produceMessage(t *testing.T, bootstrap, topic string, payload []byte) {
 	t.Helper()
 
-	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
-		"bootstrap.servers": bootstrap,
-	})
+	producer, err := kgo.NewClient(
+		kgo.SeedBrokers(bootstrap),
+	)
 	require.NoError(t, err)
 	defer producer.Close()
 
-	deliveryChan := make(chan ckafka.Event, 1)
-	defer close(deliveryChan)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	err = producer.Produce(&ckafka.Message{
-		TopicPartition: ckafka.TopicPartition{
-			Topic:     &topic,
-			Partition: ckafka.PartitionAny,
-		},
+	result := producer.ProduceSync(ctx, &kgo.Record{
+		Topic: topic,
 		Value: payload,
-	}, deliveryChan)
-	require.NoError(t, err)
+	})
 
-	select {
-	case e := <-deliveryChan:
-		m, ok := e.(*ckafka.Message)
-		require.True(t, ok, "unexpected event type %T", e)
-		require.NoError(t, m.TopicPartition.Error)
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for producer delivery report")
-	}
+	require.NoError(t, result.FirstErr())
 }

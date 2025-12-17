@@ -40,22 +40,6 @@ pkg_tar(
     visibility = ["//visibility:private"],
 )
 
-# Package the dynamically linked librdkafka.so artifacts from the build image
-# so that the runtime container has the same shared libraries available.
-genrule(
-    name = "librdkafka_rootfs",
-    outs = ["librdkafka_rootfs.tar"],
-    cmd = """
-set -eux
-tmp=$$(mktemp -d)
-trap 'rm -rf "$$tmp"' EXIT
-mkdir -p "$$tmp/usr/local/lib"
-cp /opt/homebrew/lib/librdkafka.so* "$$tmp/usr/local/lib/"
-tar -C "$$tmp" -cf $@ .
-""",
-    visibility = ["//visibility:private"],
-)
-
 genrule(
     name = "server_image_binary",
     srcs = [":server"],
@@ -70,16 +54,12 @@ oci_image(
     base = "@ubuntu//:ubuntu",
     # Entrypoint
     entrypoint = ["/server"],
-    env = {"LD_LIBRARY_PATH": "/usr/local/lib"},
     # Layers to add to the base image
-    tars = [
-        ":server_rootfs",
-        ":librdkafka_rootfs",
-    ],
+    tars = [":server_rootfs"],
     visibility = ["//visibility:public"],
 )
 
-# Variant without the librdkafka shared libraries for local macOS workflows.
+# Mac variant for local development.
 oci_image(
     name = "image_mac",
     base = "@ubuntu//:ubuntu",

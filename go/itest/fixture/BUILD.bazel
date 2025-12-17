@@ -5,5 +5,8 @@ go_library(
     srcs = ["fixture.go"],
     importpath = "wolvekafka/go/itest/fixture",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_confluentinc_confluent_kafka_go_v2//kafka"],
+    deps = [
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+    ],
 )

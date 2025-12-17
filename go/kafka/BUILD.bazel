@@ -12,7 +12,7 @@ go_library(
     deps = [
         "//go/common/logger",
         "//proto/configs",
-        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
+        "@com_github_twmb_franz_go//pkg/kgo",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -25,8 +25,8 @@ go_test(
     ],
     embed = [":kafka"],
     deps = [
-        "@com_github_confluentinc_confluent_kafka_go_v2//kafka",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kgo",
     ],
 )

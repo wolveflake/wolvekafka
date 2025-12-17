@@ -30,7 +30,8 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 const (
@@ -347,20 +348,24 @@ func waitForBootstrap(ctx context.Context, tb testing.TB, bootstrapHost, contain
 
 // checkKafkaMetadata verifies a Kafka connection by fetching metadata.
 func checkKafkaMetadata(bootstrapHost string) error {
-	client, err := ckafka.NewAdminClient(&ckafka.ConfigMap{
-		"bootstrap.servers": bootstrapHost,
-	})
+	client, err := kgo.NewClient(
+		kgo.SeedBrokers(bootstrapHost),
+	)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 
-	metadata, err := client.GetMetadata(nil, true, 10_000)
+	adminClient := kadm.NewClient(client)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	brokers, err := adminClient.Metadata(ctx)
 	if err != nil {
 		return err
 	}
 
-	if metadata == nil || len(metadata.Brokers) == 0 {
+	if len(brokers.Brokers) == 0 {
 		return errors.New("empty metadata returned from Kafka")
 	}
 

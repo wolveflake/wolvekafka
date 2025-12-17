@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	ckafka "github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -97,36 +98,28 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	require.NotNil(t, service)
 
 	// Produce a message the service should consume.
-	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
-		"bootstrap.servers": fixture.BootstrapHost(),
-	})
+	producer, err := kgo.NewClient(
+		kgo.SeedBrokers(fixture.BootstrapHost()),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		producer.Close()
 	})
 
 	messageValue := []byte("wks end-to-end payload")
-	deliveryChan := make(chan ckafka.Event, 1)
-	require.NoError(t, producer.Produce(&ckafka.Message{
-		TopicPartition: ckafka.TopicPartition{
-			Topic:     &topic,
-			Partition: ckafka.PartitionAny,
-		},
-		Value: messageValue,
-	}, deliveryChan))
 
-	var producedPartition int32
-	var producedOffset ckafka.Offset
-	select {
-	case ev := <-deliveryChan:
-		msg, ok := ev.(*ckafka.Message)
-		require.True(t, ok, "unexpected delivery event type %T", ev)
-		require.NoError(t, msg.TopicPartition.Error)
-		producedPartition = msg.TopicPartition.Partition
-		producedOffset = msg.TopicPartition.Offset
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for delivery report")
-	}
+	produceCtx, produceCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer produceCancel()
+
+	results := producer.ProduceSync(produceCtx, &kgo.Record{
+		Topic: topic,
+		Value: messageValue,
+	})
+	require.NoError(t, results.FirstErr())
+
+	record := results[0]
+	producedPartition := record.Record.Partition
+	producedOffset := record.Record.Offset
 
 	select {
 	case req := <-lambdaReqCh:
@@ -139,29 +132,33 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	}
 
 	// Verify the offset committed in Kafka advanced to include our message.
-	commitVerifier, err := ckafka.NewConsumer(&ckafka.ConfigMap{
-		"bootstrap.servers": fixture.BootstrapHost(),
-		"group.id":          groupID,
-		"auto.offset.reset": "earliest",
-	})
+	commitVerifierClient, err := kgo.NewClient(
+		kgo.SeedBrokers(fixture.BootstrapHost()),
+		kgo.ConsumerGroup(groupID),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		_ = commitVerifier.Close()
+		commitVerifierClient.Close()
 	})
 
+	adminClient := kadm.NewClient(commitVerifierClient)
+
 	require.Eventually(t, func() bool {
-		partitions, err := commitVerifier.Committed([]ckafka.TopicPartition{{
-			Topic:     &topic,
-			Partition: producedPartition,
-		}}, 10_000)
+		offsetsCtx, offsetsCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer offsetsCancel()
+
+		offsets, err := adminClient.FetchOffsets(offsetsCtx, groupID)
 		if err != nil {
-			t.Logf("Committed() error: %v", err)
+			t.Logf("FetchOffsets() error: %v", err)
 			return false
 		}
-		if len(partitions) == 0 {
+
+		topicOffsets, ok := offsets.Lookup(topic, producedPartition)
+		if !ok {
 			return false
 		}
-		return partitions[0].Offset == producedOffset+1
+
+		return topicOffsets.At == producedOffset+1
 	}, 15*time.Second, 500*time.Millisecond, "expected committed offset to advance")
 }
 
@@ -293,31 +290,22 @@ func TestWolveKafkaServiceKafkaOutputFanout(t *testing.T) {
 	require.NotNil(t, service)
 
 	// Inject a message into the first consumer's topic to drive the pipeline.
-	producer, err := ckafka.NewProducer(&ckafka.ConfigMap{
-		"bootstrap.servers": fixture.BootstrapHost(),
-	})
+	producer, err := kgo.NewClient(
+		kgo.SeedBrokers(fixture.BootstrapHost()),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		producer.Close()
 	})
 
-	deliveryChan := make(chan ckafka.Event, 1)
-	require.NoError(t, producer.Produce(&ckafka.Message{
-		TopicPartition: ckafka.TopicPartition{
-			Topic:     &inputTopic,
-			Partition: ckafka.PartitionAny,
-		},
-		Value: []byte("input-message"),
-	}, deliveryChan))
+	produceCtx, produceCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer produceCancel()
 
-	select {
-	case ev := <-deliveryChan:
-		msg, ok := ev.(*ckafka.Message)
-		require.True(t, ok, "unexpected delivery event type %T", ev)
-		require.NoError(t, msg.TopicPartition.Error)
-	case <-time.After(10 * time.Second):
-		t.Fatal("timed out waiting for delivery report")
-	}
+	results := producer.ProduceSync(produceCtx, &kgo.Record{
+		Topic: inputTopic,
+		Value: []byte("input-message"),
+	})
+	require.NoError(t, results.FirstErr())
 
 	select {
 	case <-lambda1ReqCh:
