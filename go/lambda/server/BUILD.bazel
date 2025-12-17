@@ -3,11 +3,14 @@ load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
-load("//go/wks/bazel_util:oci_push_do.bzl", "oci_push_do")
+load("//go/lambda/bazel_util:oci_push_do.bzl", "oci_push_do")
 
 go_library(
     name = "server_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "main.go",
+        "producer_handler.go",
+    ],
     embedsrcs = [
         "landing/assets/bootstrap/css/bootstrap.min.css",
         "landing/assets/bootstrap/js/bootstrap.min.js",
@@ -25,6 +28,8 @@ go_library(
         "//go/common/logger",
         "//go/lambda",
         "//proto/model",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_twmb_franz_go//pkg/kgo",
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//proto",
     ],
@@ -40,7 +45,7 @@ pkg_files(
     name = "server_rootfs_files",
     srcs = [":server_image_binary"],
     attributes = pkg_attributes(mode = "0755"),
-    renames = {":server_image_binary": "lambda-server"},
+    renames = {":server_image_binary": "server"},
     strip_prefix = strip_prefix.files_only(),
     visibility = ["//visibility:private"],
 )
@@ -63,8 +68,10 @@ genrule(
 oci_image(
     name = "image",
     base = "@ubuntu//:ubuntu",
-    entrypoint = ["/lambda-server"],
-    tars = [":server_rootfs"],
+    entrypoint = ["/server"],
+    tars = [
+        ":server_rootfs",
+    ],
     visibility = ["//visibility:public"],
 )
 

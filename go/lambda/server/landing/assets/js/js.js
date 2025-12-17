@@ -62,9 +62,91 @@
         });
     }
 
+    function setupDemoProducerForm() {
+        const form = document.getElementById('demo-producer-form');
+        if (!form) {
+            return;
+        }
+
+        const statusEl = document.getElementById('demo-producer-status');
+        const submitBtn = form.querySelector('[data-role="producer-submit"]');
+        const resetBtn = form.querySelector('[data-role="producer-reset"]');
+        const defaults = {
+            topic: form.topic.value,
+            bootstrap: form.bootstrap_servers.value,
+            count: form.count.value,
+            interval: form.interval_seconds.value,
+            message: form.message.value,
+        };
+
+        function setStatus(kind, message) {
+            if (!statusEl) {
+                return;
+            }
+            statusEl.classList.add('d-none');
+            statusEl.classList.remove('alert-success', 'alert-danger', 'alert-info');
+            if (!message) {
+                return;
+            }
+            statusEl.classList.remove('d-none');
+            statusEl.classList.add('alert-' + kind);
+            statusEl.textContent = message;
+        }
+
+        form.addEventListener('submit', async function (event) {
+            event.preventDefault();
+            if (!form.reportValidity()) {
+                return;
+            }
+
+            const payload = {
+                topic: form.topic.value.trim(),
+                bootstrap_servers: form.bootstrap_servers.value.trim(),
+                count: Number(form.count.value) || 0,
+                interval_seconds: Number(form.interval_seconds.value) || 0,
+                message: form.message.value.trim(),
+            };
+
+            setStatus('info', 'Starting producer...');
+            submitBtn.disabled = true;
+            try {
+                const response = await fetch('/api/demo-producer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!response.ok) {
+                    const text = await response.text();
+                    throw new Error(text || 'Producer call failed');
+                }
+                const result = await response.json();
+                const last = (result.results || []).slice(-1)[0];
+                const summary = last
+                    ? `Produced ${result.produced} message(s). Last offset ${last.offset}.`
+                    : `Produced ${result.produced} message(s).`;
+                setStatus('success', summary);
+            } catch (err) {
+                console.error('producer failed', err);
+                setStatus('danger', err.message || 'Failed to run producer');
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+
+        resetBtn?.addEventListener('click', function () {
+            form.topic.value = defaults.topic;
+            form.bootstrap_servers.value = defaults.bootstrap;
+            form.count.value = defaults.count;
+            form.interval_seconds.value = defaults.interval;
+            form.message.value = defaults.message;
+            setStatus('', '');
+        });
+    }
+
     window.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.grafana-frame').forEach(function (frame) {
             setupCard(frame);
         });
+        setupDemoProducerForm();
     });
 })();

@@ -58,3 +58,13 @@ bazel run //go/wks/server:image_push_linux        # linux/amd64
 ```
 
 If you prefer macOS to handle the push directly, keep the existing `platform_transition_filegroup` targets and run the same commands outside the container; just ensure `crane auth login` has been run locally.
+
+If you want to update image with specific digest use the command below
+
+```bash
+
+helm upgrade lambda services/lambda -n wks-demo --reuse-values \
+--set image.digest=sha256:fc6d423f36757610ede60aa305b20e2b0ef2bf57016ecff4cf452046873e73ab \
+--set image.tag="latest"
+
+```
