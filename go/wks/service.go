@@ -27,6 +27,9 @@ import (
 
 	"github.com/dropbox/godropbox/executor"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
+
+	configs_pb "wolvekafka/proto/configs"
 )
 
 const (
@@ -63,8 +66,9 @@ type WolveKafkaParams struct {
 }
 
 type consumerRef struct {
-	jobs     []*ProcessingJob
-	executor *executor.WorkPoolExecutor
+	jobs        []*ProcessingJob
+	executor    *executor.WorkPoolExecutor
+	consumerCfg *configs_pb.Consumer
 }
 
 // NewWolveKafkaService creates a new WKS service instance.
@@ -120,16 +124,27 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	for _, consumerCfg := range config.Consumers() {
 		consumerName := consumerCfg.GetGroupId()
 		if existingConsumer, exists := currentConsumers[consumerName]; exists {
-			newConsumers[consumerName] = existingConsumer
+			if proto.Equal(existingConsumer.consumerCfg, consumerCfg) {
+				// Config unchanged — keep existing consumer.
+				newConsumers[consumerName] = existingConsumer
+				delete(currentConsumers, consumerName)
+				continue
+			}
+			// Config changed — stop old consumer so it gets recreated below.
+			w.log.Infof("config changed for consumer %s, recreating", consumerName)
+			w.stopProcessingJobs(existingConsumer)
+			existingConsumer.executor.Configure(executor.WorkPoolExecutorParams{NumWorkers: 0})
 			delete(currentConsumers, consumerName)
-			// TODO(13): check if configuration has changed and update if necessary.
-			continue
 		}
 
 		// create new consumer.
 		w.log.Infof("creating new consumer: %s", consumerName)
+		numWorkers := defaultNumWorkers
+		if p := consumerCfg.GetParallel(); p != nil && p.GetParallelism() > 0 {
+			numWorkers = int(p.GetParallelism())
+		}
 		workPoolParams := executor.WorkPoolExecutorParams{
-			NumWorkers: defaultNumWorkers,
+			NumWorkers: numWorkers,
 		}
 		workPool := executor.NewWorkPoolExecutor()
 		err := workPool.Configure(workPoolParams)
@@ -170,8 +185,9 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 				w.metrics.recordConsumerLifecycle(w.ctx, consumerName, 1)
 			}
 			newConsumers[consumerName] = &consumerRef{
-				jobs:     jobs,
-				executor: workPool,
+				jobs:        jobs,
+				executor:    workPool,
+				consumerCfg: consumerCfg,
 			}
 		}
 	}

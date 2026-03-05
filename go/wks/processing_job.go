@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/codes"
@@ -40,6 +39,14 @@ import (
 var (
 	// interval to recreate consumer in case of failure.
 	consumerRecreationInterval = 10 * time.Second
+
+	// defaultLambdaTimeout is the HTTP client timeout for lambda invocations.
+	defaultLambdaTimeout = 30 * time.Second
+
+	// lambdaHTTPClient is a shared HTTP client with a reasonable timeout.
+	lambdaHTTPClient = &http.Client{
+		Timeout: defaultLambdaTimeout,
+	}
 )
 
 type sendEventFunc func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error)
@@ -55,9 +62,6 @@ type ProcessingJob struct {
 	jobId        int
 
 	metrics *instrumentation
-
-	// consumers map for dynamic reconfiguration.
-	consumers atomic.Value // map[string]*consumerRef
 
 	// callback function to send events.
 	sendEventFunc sendEventFunc
@@ -105,7 +109,7 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := lambdaHTTPClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("failed to send lambda request: %w", err)
 		}
@@ -180,7 +184,7 @@ func (c *ProcessingJob) Execute() {
 	consumerParams := kafka.ConsumerParams{
 		Name:         c.consumerName,
 		Cluster:      c.clusterCfg,
-		PoolDuration: time.Millisecond * 500,
+		PollDuration: time.Millisecond * 500,
 		Topics:       c.consumerCfg.GetTopics(),
 	}
 	if batchCfg := c.consumerCfg.GetBatch(); batchCfg != nil {
@@ -218,26 +222,43 @@ func (c *ProcessingJob) Execute() {
 
 	sendCtx := context.WithValue(c.ctx, consumerConfigCtxKey{}, c.consumerCfg)
 
+	draining := false
 	for {
+		var msgs []*kafka.Message
+		var ok bool
+
+		if draining {
+			return
+		}
+
 		select {
 		case <-c.ctx.Done():
-			c.log.Infof("[%v:%v] stopping consumer job", c.consumerName, c.jobId)
-			return
-		case msgs, ok := <-msgChan:
+			// Drain: try to process any already-queued batch before exiting.
+			select {
+			case msgs, ok = <-msgChan:
+				if !ok || len(msgs) == 0 {
+					c.log.Infof("[%v:%v] stopping consumer job (no pending batch)", c.consumerName, c.jobId)
+					return
+				}
+				c.log.Infof("[%v:%v] draining final batch of %d messages before shutdown", c.consumerName, c.jobId, len(msgs))
+				draining = true
+			default:
+				c.log.Infof("[%v:%v] stopping consumer job", c.consumerName, c.jobId)
+				return
+			}
+		case msgs, ok = <-msgChan:
 			if !ok {
 				c.log.Infof("[%v:%v] message channel closed", c.consumerName, c.jobId)
 				c.ctxCancel()
 				return
 			}
+		}
 
-			for _, msg := range msgs {
-				c.log.Infof(
-					"[%v:%v] Consumed message from topic %s [%d] at offset %v",
-					c.consumerName,
-					c.jobId,
-					msg.Topic,
-					msg.Partition,
-					msg.Offset)
+			if len(msgs) > 0 {
+				first := msgs[0]
+				last := msgs[len(msgs)-1]
+				c.log.Infof("[%v:%v] received batch of %d messages (%s[%d] offsets %v..%v)",
+					c.consumerName, c.jobId, len(msgs), first.Topic, first.Partition, first.Offset, last.Offset)
 			}
 
 			// convert kafka messages to lambda request.
@@ -269,22 +290,35 @@ func (c *ProcessingJob) Execute() {
 					return
 				}
 
-				var batchErr error
-
 				// process lambda response.
 				if lambdaResp != nil {
 					if err := c.outputPolicy.Process(ctx, lambdaReq, lambdaResp); err != nil {
-						batchErr = err
 						if c.metrics != nil {
 							c.metrics.recordOutputError(ctx, c.consumerName, c.jobId, err)
 						}
 						c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
 						span.RecordError(err)
+						span.SetStatus(codes.Error, err.Error())
+						return
 					}
 				}
 
-				successfulCommits := 0
+				// Commit only the highest offset per topic-partition.
+				type tpKey struct {
+					topic     string
+					partition int32
+				}
+				highest := make(map[tpKey]*kafka.Message)
 				for _, msg := range msgs {
+					key := tpKey{topic: msg.Topic, partition: msg.Partition}
+					if prev, ok := highest[key]; !ok || msg.Offset > prev.Offset {
+						highest[key] = msg
+					}
+				}
+
+				var batchErr error
+				successfulCommits := 0
+				for _, msg := range highest {
 					_, err := c.kafkaConsumer.CommitMessage(msg)
 					if err != nil {
 						batchErr = err
@@ -295,7 +329,7 @@ func (c *ProcessingJob) Execute() {
 						span.RecordError(err)
 					} else {
 						successfulCommits++
-						c.log.Infof("[%v:%v] committed message offset: %v", c.consumerName, c.jobId, msg.Offset)
+						c.log.Debugf("[%v:%v] committed offset %v for %s[%d]", c.consumerName, c.jobId, msg.Offset, msg.Topic, msg.Partition)
 					}
 				}
 

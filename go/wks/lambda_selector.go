@@ -18,8 +18,8 @@
 package wks
 
 import (
+	"math/rand/v2"
 	"sort"
-	"time"
 
 	configs_pb "wolvekafka/proto/configs"
 )
@@ -59,7 +59,7 @@ func NewLambdaSelector(lambdas []*configs_pb.Lambda) *LambdaSelector {
 
 // pick lambda based on weight.
 func (l *LambdaSelector) Select() *configs_pb.Lambda {
-	randWeight := time.Now().UnixNano() % int64(l.totalWeight)
+	randWeight := rand.Int64N(l.totalWeight)
 	currentWeight := int64(0)
 	for _, lambda := range l.lambdas {
 		weight := lambda.GetWeight()

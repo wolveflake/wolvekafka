@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	// defaultPoolDurationMs is the default duration (in milliseconds) for polling Kafka messages.
-	defaultPoolDurationMs = 100
+	// defaultPollDurationMs is the default duration (in milliseconds) for polling Kafka messages.
+	defaultPollDurationMs = 100
 	// defaultBatchMaxMessages flushes after each message unless overridden.
 	defaultBatchMaxMessages = 1
 	// defaultBatchMaxBytes is an ample cap to prevent unbounded batch growth.
@@ -54,7 +54,7 @@ type Consumer struct {
 	ctx context.Context
 
 	// polling duration in milliseconds.
-	poolDurationMs int
+	pollDurationMs int
 
 	// Kafka consumer instance.
 	kafkaConsumer KafkaConsumerClient
@@ -79,7 +79,7 @@ type ConsumerParams struct {
 	Cluster *configs_pb.Cluster
 
 	// polling duration.
-	PoolDuration time.Duration
+	PollDuration time.Duration
 
 	// topics to subscribe to.
 	Topics []string
@@ -120,16 +120,16 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 	}
 
 	consumer.franzClient = franzClient
-	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, pollDuration: time.Duration(consumer.poolDurationMs) * time.Millisecond}
+	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, pollDuration: time.Duration(consumer.pollDurationMs) * time.Millisecond}
 
 	return consumer, nil
 }
 
 // newConsumer creates a new Consumer instance without initializing the Kafka consumer.
 func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
-	poolDurationMs := params.PoolDuration.Milliseconds()
-	if poolDurationMs <= 0 {
-		poolDurationMs = defaultPoolDurationMs
+	pollDurationMs := params.PollDuration.Milliseconds()
+	if pollDurationMs <= 0 {
+		pollDurationMs = defaultPollDurationMs
 	}
 
 	batchMaxMessages := params.BatchMaxMessages
@@ -152,7 +152,7 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	return &Consumer{
 		ctx:              ctx,
 		name:             params.Name,
-		poolDurationMs:   int(poolDurationMs),
+		pollDurationMs:   int(pollDurationMs),
 		log:              log,
 		batchMaxMessages: batchMaxMessages,
 		batchMaxBytes:    batchMaxBytes,
@@ -200,7 +200,7 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 				return
 			}
 
-			event := c.kafkaConsumer.Poll(c.poolDurationMs)
+			event := c.kafkaConsumer.Poll(c.pollDurationMs)
 			if event != nil {
 				switch e := event.(type) {
 				case *Message:
@@ -269,9 +269,17 @@ func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 type franzConsumerAdapter struct {
 	client       *kgo.Client
 	pollDuration time.Duration
+	pending      []*Message
 }
 
 func (f *franzConsumerAdapter) Poll(ms int) Event {
+	// Return buffered records from a previous fetch first.
+	if len(f.pending) > 0 {
+		record := f.pending[0]
+		f.pending = f.pending[1:]
+		return record
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ms)*time.Millisecond)
 	defer cancel()
 
@@ -290,8 +298,11 @@ func (f *franzConsumerAdapter) Poll(ms int) Event {
 		return nil
 	}
 
-	record := iter.Next()
-	return record
+	first := iter.Next()
+	for !iter.Done() {
+		f.pending = append(f.pending, iter.Next())
+	}
+	return first
 }
 
 func (f *franzConsumerAdapter) Close() error {

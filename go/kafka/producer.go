@@ -127,6 +127,33 @@ func (c *Producer) Produce(ctx context.Context, msg *Message) error {
 	return nil
 }
 
+// ProduceBatch sends multiple messages to Kafka in a single synchronous call.
+func (c *Producer) ProduceBatch(ctx context.Context, msgs []*Message) error {
+	if len(msgs) == 0 {
+		return nil
+	}
+
+	if c.ProducerFunc != nil {
+		for _, msg := range msgs {
+			if err := c.ProducerFunc(msg); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if c.kafkaProducer == nil {
+		return fmt.Errorf("kafka producer is not initialized")
+	}
+
+	result := c.kafkaProducer.ProduceSync(ctx, msgs...)
+	if err := result.FirstErr(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // Close closes the Kafka producer.
 func (c *Producer) Close() error {
 	c.ctxCancel()
