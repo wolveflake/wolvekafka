@@ -69,6 +69,11 @@ func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaReq
 
 	policy := o.consumerCfg.GetKafka()
 
+	if len(resp.GetMessages()) != len(req.GetMessages()) {
+		return fmt.Errorf("response message count (%d) does not match request message count (%d)",
+			len(resp.GetMessages()), len(req.GetMessages()))
+	}
+
 	// construct kafka message.
 	msgs := make([]*kafka.Message, 0, len(resp.GetMessages()))
 
@@ -104,18 +109,10 @@ func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaReq
 		msgs = append(msgs, outMsg)
 	}
 
-	// produce generated messages.
-	// TODO(13): switch to batch API.
-	for i, msg := range msgs {
-		if msg == nil {
-			continue
-		}
-		err := o.kafkaProducer.Produce(ctx, msg)
-		if err != nil {
-			o.log.Infof(
-				"failed to produce message [%d/%d]: err: %v", i, len(msgs), err)
-			return err
-		}
+	// produce generated messages in a single batch.
+	if err := o.kafkaProducer.ProduceBatch(ctx, msgs); err != nil {
+		o.log.Errorf("failed to produce batch of %d messages: %v", len(msgs), err)
+		return err
 	}
 
 	return nil

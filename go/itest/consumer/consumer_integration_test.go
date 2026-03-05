@@ -33,7 +33,7 @@ func TestConsumerReceivesMessages(t *testing.T) {
 		Name:         fmt.Sprintf("itest-consumer-%d", time.Now().UnixNano()),
 		Cluster:      cluster,
 		Topics:       []string{topic},
-		PoolDuration: 100 * time.Millisecond,
+		PollDuration: 100 * time.Millisecond,
 	})
 	require.NoError(t, err)
 	t.Cleanup(func() {

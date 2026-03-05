@@ -18,6 +18,7 @@
 package wks
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -38,4 +39,25 @@ func TestSorting(t *testing.T) {
 		assert.GreaterOrEqual(t, weight, int64(lambda.GetWeight()))
 		weight = int64(lambda.GetWeight())
 	}
+}
+
+// TestSelectDistribution verifies that weighted selection produces a distribution
+// roughly proportional to the configured weights.
+func TestSelectDistribution(t *testing.T) {
+	lambdas := []*configs_pb.Lambda{
+		{Url: "http://a", Weight: 75},
+		{Url: "http://b", Weight: 25},
+	}
+	s := NewLambdaSelector(lambdas)
+
+	counts := make(map[string]int)
+	const iterations = 10_000
+	for i := 0; i < iterations; i++ {
+		selected := s.Select()
+		counts[selected.GetUrl()]++
+	}
+
+	ratioA := float64(counts["http://a"]) / float64(iterations)
+	// Expected ~0.75 for "a". Allow 10% tolerance.
+	assert.Less(t, math.Abs(ratioA-0.75), 0.10, "expected ~75%% selection for lambda a, got %.2f%%", ratioA*100)
 }

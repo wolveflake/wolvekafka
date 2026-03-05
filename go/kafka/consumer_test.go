@@ -68,7 +68,7 @@ func TestPollBatchesByMessageCount(t *testing.T) {
 
 	consumer := newConsumer(ctx, ConsumerParams{
 		Name:             "batch-by-count",
-		PoolDuration:     10 * time.Millisecond,
+		PollDuration:     10 * time.Millisecond,
 		BatchMaxMessages: 2,
 	})
 	consumer.kafkaConsumer = fakeConsumer
@@ -99,7 +99,7 @@ func TestPollBatchesBySize(t *testing.T) {
 
 	consumer := newConsumer(ctx, ConsumerParams{
 		Name:          "batch-by-size",
-		PoolDuration:  10 * time.Millisecond,
+		PollDuration:  10 * time.Millisecond,
 		BatchMaxBytes: 4,
 		BatchMaxWait:  time.Second,
 	})
@@ -132,7 +132,7 @@ func TestPollBatchesByWaitDuration(t *testing.T) {
 
 	consumer := newConsumer(ctx, ConsumerParams{
 		Name:             "batch-by-wait",
-		PoolDuration:     5 * time.Millisecond,
+		PollDuration:     5 * time.Millisecond,
 		BatchMaxMessages: 10,
 		BatchMaxBytes:    1024,
 		BatchMaxWait:     50 * time.Millisecond,
