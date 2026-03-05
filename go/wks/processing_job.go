@@ -254,97 +254,96 @@ func (c *ProcessingJob) Execute() {
 			}
 		}
 
-			if len(msgs) > 0 {
-				first := msgs[0]
-				last := msgs[len(msgs)-1]
-				c.log.Infof("[%v:%v] received batch of %d messages (%s[%d] offsets %v..%v)",
-					c.consumerName, c.jobId, len(msgs), first.Topic, first.Partition, first.Offset, last.Offset)
-			}
+		if len(msgs) > 0 {
+			first := msgs[0]
+			last := msgs[len(msgs)-1]
+			c.log.Infof("[%v:%v] received batch of %d messages (%s[%d] offsets %v..%v)",
+				c.consumerName, c.jobId, len(msgs), first.Topic, first.Partition, first.Offset, last.Offset)
+		}
 
-			// convert kafka messages to lambda request.
-			lambdaReq := kafkaMsgsToLambdaRequest(msgs)
-			batchBytes := approximateBatchBytes(msgs)
-			processCtx := sendCtx
-			span := trace.SpanFromContext(processCtx)
+		// convert kafka messages to lambda request.
+		lambdaReq := kafkaMsgsToLambdaRequest(msgs)
+		batchBytes := approximateBatchBytes(msgs)
+		processCtx := sendCtx
+		span := trace.SpanFromContext(processCtx)
+		if c.metrics != nil {
+			processCtx, span = c.metrics.startBatchSpan(sendCtx, c.consumerName, c.jobId, len(msgs), batchBytes)
+		}
+
+		func(ctx context.Context, span trace.Span) {
+			defer span.End()
+
 			if c.metrics != nil {
-				processCtx, span = c.metrics.startBatchSpan(sendCtx, c.consumerName, c.jobId, len(msgs), batchBytes)
+				c.metrics.recordBatch(ctx, c.consumerName, c.jobId, len(msgs), batchBytes)
 			}
 
-			func(ctx context.Context, span trace.Span) {
-				defer span.End()
+			start := time.Now()
+			lambdaResp, err := c.sendEventFunc(c, ctx, lambdaReq)
+			dur := time.Since(start)
+			c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
+			if c.metrics != nil {
+				c.metrics.recordLambdaResult(ctx, c.consumerName, c.jobId, dur, err)
+			}
+			if err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return
+			}
 
-				if c.metrics != nil {
-					c.metrics.recordBatch(ctx, c.consumerName, c.jobId, len(msgs), batchBytes)
-				}
-
-				start := time.Now()
-				lambdaResp, err := c.sendEventFunc(c, ctx, lambdaReq)
-				dur := time.Since(start)
-				c.log.Infof("[%v:%v] Processed with status: %v", c.consumerName, c.jobId, err)
-				if c.metrics != nil {
-					c.metrics.recordLambdaResult(ctx, c.consumerName, c.jobId, dur, err)
-				}
-				if err != nil {
+			// process lambda response.
+			if lambdaResp != nil {
+				if err := c.outputPolicy.Process(ctx, lambdaReq, lambdaResp); err != nil {
+					if c.metrics != nil {
+						c.metrics.recordOutputError(ctx, c.consumerName, c.jobId, err)
+					}
+					c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
 					span.RecordError(err)
 					span.SetStatus(codes.Error, err.Error())
 					return
 				}
+			}
 
-				// process lambda response.
-				if lambdaResp != nil {
-					if err := c.outputPolicy.Process(ctx, lambdaReq, lambdaResp); err != nil {
-						if c.metrics != nil {
-							c.metrics.recordOutputError(ctx, c.consumerName, c.jobId, err)
-						}
-						c.log.Errorf("[%v:%v] error handling lambda response: %v", c.consumerName, c.jobId, err)
-						span.RecordError(err)
-						span.SetStatus(codes.Error, err.Error())
-						return
+			// Commit only the highest offset per topic-partition.
+			type tpKey struct {
+				topic     string
+				partition int32
+			}
+			highest := make(map[tpKey]*kafka.Message)
+			for _, msg := range msgs {
+				key := tpKey{topic: msg.Topic, partition: msg.Partition}
+				if prev, ok := highest[key]; !ok || msg.Offset > prev.Offset {
+					highest[key] = msg
+				}
+			}
+
+			var batchErr error
+			successfulCommits := 0
+			for _, msg := range highest {
+				_, err := c.kafkaConsumer.CommitMessage(msg)
+				if err != nil {
+					batchErr = err
+					if c.metrics != nil {
+						c.metrics.recordCommitError(ctx, c.consumerName, c.jobId, err)
 					}
+					c.log.Errorf("[%v:%v] error committing message offset: %v", c.consumerName, c.jobId, err)
+					span.RecordError(err)
+				} else {
+					successfulCommits++
+					c.log.Debugf("[%v:%v] committed offset %v for %s[%d]", c.consumerName, c.jobId, msg.Offset, msg.Topic, msg.Partition)
 				}
+			}
 
-				// Commit only the highest offset per topic-partition.
-				type tpKey struct {
-					topic     string
-					partition int32
-				}
-				highest := make(map[tpKey]*kafka.Message)
-				for _, msg := range msgs {
-					key := tpKey{topic: msg.Topic, partition: msg.Partition}
-					if prev, ok := highest[key]; !ok || msg.Offset > prev.Offset {
-						highest[key] = msg
-					}
-				}
+			if successfulCommits > 0 && c.metrics != nil {
+				c.metrics.recordMessagesProcessed(ctx, c.consumerName, c.jobId, successfulCommits)
+			}
 
-				var batchErr error
-				successfulCommits := 0
-				for _, msg := range highest {
-					_, err := c.kafkaConsumer.CommitMessage(msg)
-					if err != nil {
-						batchErr = err
-						if c.metrics != nil {
-							c.metrics.recordCommitError(ctx, c.consumerName, c.jobId, err)
-						}
-						c.log.Errorf("[%v:%v] error committing message offset: %v", c.consumerName, c.jobId, err)
-						span.RecordError(err)
-					} else {
-						successfulCommits++
-						c.log.Debugf("[%v:%v] committed offset %v for %s[%d]", c.consumerName, c.jobId, msg.Offset, msg.Topic, msg.Partition)
-					}
-				}
+			if batchErr != nil {
+				span.SetStatus(codes.Error, batchErr.Error())
+				return
+			}
 
-				if successfulCommits > 0 && c.metrics != nil {
-					c.metrics.recordMessagesProcessed(ctx, c.consumerName, c.jobId, successfulCommits)
-				}
-
-				if batchErr != nil {
-					span.SetStatus(codes.Error, batchErr.Error())
-					return
-				}
-
-				span.SetStatus(codes.Ok, "processed")
-			}(processCtx, span)
-		}
+			span.SetStatus(codes.Ok, "processed")
+		}(processCtx, span)
 	}
 }
 
