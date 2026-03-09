@@ -10,7 +10,7 @@ NAMESPACE="${NAMESPACE:-wolvekafka}"
 CHART_DIR="services"
 STRIMZI_NAMESPACE="${STRIMZI_NAMESPACE:-strimzi}"
 
-ALL_SERVICES=(kafka)
+ALL_SERVICES=(kafka lambda wks)
 
 # Services that are helm-only (no Bazel build step).
 helm_only() {
@@ -47,6 +47,8 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 kafka"
+    echo "  $0 wks"
+    echo "  $0 lambda"
     echo "  $0 kafka -- --set kafka.replicas=3"
     echo "  $0 --all"
     echo ""
@@ -209,5 +211,12 @@ case "${SERVICE_NAME}" in
 esac
 
 echo "==> Done. ${SERVICE_NAME} deployed successfully."
-kubectl get pods -n "${NAMESPACE}" -l "strimzi.io/cluster=${CLUSTER_NAME:-${RELEASE_NAME}}" -o wide 2>/dev/null \
-    || kubectl get pods -n "${NAMESPACE}" -l "app=${RELEASE_NAME}" -o wide
+case "${SERVICE_NAME}" in
+    kafka)
+        kubectl get pods -n "${NAMESPACE}" -l "strimzi.io/cluster=${CLUSTER_NAME:-${RELEASE_NAME}}" -o wide
+        ;;
+    *)
+        kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/instance=${RELEASE_NAME}" -o wide 2>/dev/null \
+            || kubectl get pods -n "${NAMESPACE}" -l "app=${RELEASE_NAME}" -o wide
+        ;;
+esac

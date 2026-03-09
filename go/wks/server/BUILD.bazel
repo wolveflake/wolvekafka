@@ -1,6 +1,6 @@
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 load("//go/wks/bazel_util:oci_push_do.bzl", "oci_push_do")
@@ -59,13 +59,11 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-# Mac variant for local development.
-oci_image(
-    name = "image_mac",
-    base = "@ubuntu//:ubuntu",
-    entrypoint = ["/server"],
-    tars = [":server_rootfs"],
-    visibility = ["//visibility:public"],
+# Local image for minikube development.
+oci_load(
+    name = "local_image",
+    image = ":image_linux",
+    repo_tags = ["ghcr.io/wolveflake/wks:latest"],
 )
 
 # Push the image. The push rules stay in the host configuration so that the helper

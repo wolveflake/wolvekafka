@@ -1,6 +1,6 @@
 load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
 load("//go/lambda/bazel_util:oci_push_do.bzl", "oci_push_do")
@@ -73,6 +73,13 @@ oci_image(
         ":server_rootfs",
     ],
     visibility = ["//visibility:public"],
+)
+
+# Local image for minikube development.
+oci_load(
+    name = "local_image",
+    image = ":image",
+    repo_tags = ["ghcr.io/wolveflake/lambda:latest"],
 )
 
 oci_push_do(
