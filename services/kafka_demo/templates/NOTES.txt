@@ -1,0 +1,12 @@
+Thank you for installing the Wolveflake Kafka demo chart!
+
+1. Verify the pods are ready:
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+
+2. Forward the broker port for local testing:
+   kubectl port-forward svc/{{ include "kafka-demo.kafkaServiceName" . }} 9092:{{ .Values.kafka.service.port }}
+
+3. Then produce/consume with your preferred Kafka client using localhost:9092.
+{{- if .Values.kafka.service.external.enabled }}
+External access is enabled via svc/{{ printf "%s-ext" (include "kafka-demo.kafkaServiceName" .) }} on port {{ .Values.kafka.service.external.port }}.
+{{- end }}

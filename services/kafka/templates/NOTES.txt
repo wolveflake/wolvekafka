@@ -1,12 +1,30 @@
-Thank you for installing the Wolveflake Kafka demo chart!
+Strimzi Kafka cluster "{{ .Values.clusterName }}" is being deployed.
 
-1. Verify the pods are ready:
-   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+The Strimzi operator will reconcile the Kafka CR and create the broker pods.
 
-2. Forward the broker port for local testing:
-   kubectl port-forward svc/{{ include "kafka-demo.kafkaServiceName" . }} 9092:{{ .Values.kafka.service.port }}
+Wait for the cluster to become ready:
 
-3. Then produce/consume with your preferred Kafka client using localhost:9092.
-{{- if .Values.kafka.service.external.enabled }}
-External access is enabled via svc/{{ printf "%s-ext" (include "kafka-demo.kafkaServiceName" .) }} on port {{ .Values.kafka.service.external.port }}.
-{{- end }}
+  kubectl wait kafka/{{ .Values.clusterName }} \
+    --for=condition=Ready \
+    --timeout=300s \
+    -n {{ .Release.Namespace }}
+
+Once ready, the internal bootstrap address is:
+
+  {{ .Values.clusterName }}-kafka-bootstrap.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.kafka.listeners.plain.port }}
+
+Quick test — produce and consume:
+
+  kubectl -n {{ .Release.Namespace }} run kafka-producer -ti \
+    --image=quay.io/strimzi/kafka:0.51.0-kafka-{{ .Values.kafka.version }} \
+    --rm=true --restart=Never \
+    -- bin/kafka-console-producer.sh \
+       --bootstrap-server {{ .Values.clusterName }}-kafka-bootstrap:{{ .Values.kafka.listeners.plain.port }} \
+       --topic test
+
+  kubectl -n {{ .Release.Namespace }} run kafka-consumer -ti \
+    --image=quay.io/strimzi/kafka:0.51.0-kafka-{{ .Values.kafka.version }} \
+    --rm=true --restart=Never \
+    -- bin/kafka-console-consumer.sh \
+       --bootstrap-server {{ .Values.clusterName }}-kafka-bootstrap:{{ .Values.kafka.listeners.plain.port }} \
+       --topic test --from-beginning

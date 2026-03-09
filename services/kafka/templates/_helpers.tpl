@@ -1,53 +1,39 @@
-{{- define "kafka-demo.name" -}}
-{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "kafka.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
 
-{{- define "kafka-demo.fullname" -}}
-{{- if .Values.fullnameOverride -}}
-{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
-{{- else -}}
-{{- $name := include "kafka-demo.name" . -}}
-{{- if contains $name .Release.Name -}}
-{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
-{{- else -}}
-{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
+{{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "kafka.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
 
-{{- define "kafka-demo.chart" -}}
-{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "kafka-demo.kafkaServiceName" -}}
-{{- printf "%s-kafka" (include "kafka-demo.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "kafka-demo.kafkaHeadlessServiceName" -}}
-{{- printf "%s-kafka-headless" (include "kafka-demo.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "kafka-demo.zookeeperServiceName" -}}
-{{- printf "%s-zookeeper" (include "kafka-demo.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
-
-{{- define "kafka-demo.labels" -}}
-helm.sh/chart: {{ include "kafka-demo.chart" . }}
-app.kubernetes.io/name: {{ include "kafka-demo.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+{{/*
+Common labels.
+*/}}
+{{- define "kafka.labels" -}}
+helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
+{{ include "kafka.selectorLabels" . }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-{{- end -}}
+{{- end }}
 
-{{- define "kafka-demo.kafkaSelectorLabels" -}}
-app.kubernetes.io/component: kafka
-{{ include "kafka-demo.labels" . }}
-{{- end -}}
-
-{{- define "kafka-demo.zookeeperSelectorLabels" -}}
-app.kubernetes.io/component: zookeeper
-{{ include "kafka-demo.labels" . }}
-{{- end -}}
-
-{{- define "kafka-demo.kafkaShellScriptsName" -}}
-{{- printf "%s-shell-scripts" (include "kafka-demo.fullname" .) | trunc 63 | trimSuffix "-" -}}
-{{- end -}}
+{{/*
+Selector labels.
+*/}}
+{{- define "kafka.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "kafka.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}

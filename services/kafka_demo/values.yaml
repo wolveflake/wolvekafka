@@ -1,0 +1,107 @@
+# Default values for kafka-demo.
+# This chart intentionally keeps the footprint very small so you can demo Kafka
+# clusters on DigitalOcean Kubernetes without over-provisioning.
+
+global:
+  imagePullSecrets: []
+  storageClass: ""
+
+image:
+  kafka:
+    repository: confluentinc/cp-kafka
+    tag: 7.6.1
+    pullPolicy: IfNotPresent
+  zookeeper:
+    repository: confluentinc/cp-zookeeper
+    tag: 7.6.1
+    pullPolicy: IfNotPresent
+kafkaShell:
+  enabled: true
+  image:
+    repository: confluentinc/cp-kafka
+    tag: 7.6.1
+    pullPolicy: IfNotPresent
+  command:
+    - "/bin/bash"
+    - "-c"
+    - "trap : TERM INT; sleep infinity & wait"
+  producerScript:
+    enabled: true
+    mountPath: /opt/wolvekafka
+    fileName: demo_producer.py
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+kafka:
+  replicaCount: 1
+  heapOpts: "-Xmx512m -Xms512m"
+  dataDir: /bitnami/kafka
+  dataSubPath: data
+  podSecurityContext:
+    fsGroup: 1000
+  service:
+    type: ClusterIP
+    port: 9092
+    nodePort: null
+    external:
+      enabled: false
+      type: LoadBalancer
+      port: 9094
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 500m
+      memory: 1500Mi
+  config:
+    offsetsTopicReplicationFactor: 1
+    transactionStateLogReplicationFactor: 1
+    transactionStateLogMinIsr: 1
+    defaultReplicationFactor: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+zookeeper:
+  replicaCount: 1
+  dataDir: /bitnami/zookeeper
+  dataSubPath: data
+  podSecurityContext:
+    fsGroup: 1000
+  servicePort: 2181
+  tickTime: 2000
+  initLimit: 10
+  syncLimit: 5
+  persistence:
+    enabled: false
+    accessModes:
+      - ReadWriteOnce
+    size: 1Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+podAnnotations: {}

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: kafka-demo
+version: 0.1.0
+appVersion: "3.6"
+description: Small-footprint Apache Kafka demo cluster for DigitalOcean Kubernetes.
+type: application
+keywords:
+  - kafka
+  - zookeeper
+  - demo
+  - messaging
+home: https://wolveflake.example
+maintainers:
+  - name: Wolveflake Platform
+    email: ops@wolveflake.example
