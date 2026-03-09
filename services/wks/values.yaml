@@ -71,7 +71,7 @@ config:
     {
       "cluster": {
         "bootstrap_servers": [
-          "demo-kafka-kafka-demo-kafka:9092"
+          "wolvekafka-kafka-bootstrap:9092"
         ]
       },
       "consumers": [
@@ -82,7 +82,7 @@ config:
           ],
           "lambdas": [
             {
-              "url": "http://lambda-lambda.wks-demo.svc.cluster.local:8081/hello"
+              "url": "http://lambda.wolvekafka.svc.cluster.local:8081/hello"
             }
           ]
         }
