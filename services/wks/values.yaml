@@ -3,7 +3,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/wolveflake/wks
+  repository: registry.digitalocean.com/wolveflake/wks
   tag: latest
   pullPolicy: IfNotPresent
   pullSecrets:
