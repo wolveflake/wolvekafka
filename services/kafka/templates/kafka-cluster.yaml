@@ -1,0 +1,31 @@
+apiVersion: kafka.strimzi.io/v1
+kind: Kafka
+metadata:
+  name: {{ .Values.clusterName }}
+  annotations:
+    strimzi.io/node-pools: enabled
+    strimzi.io/kraft: enabled
+  labels:
+    {{- include "kafka.labels" . | nindent 4 }}
+spec:
+  kafka:
+    version: {{ .Values.kafka.version | quote }}
+    metadataVersion: {{ .Values.kafka.metadataVersion | quote }}
+    listeners:
+      - name: plain
+        port: {{ .Values.kafka.listeners.plain.port }}
+        type: internal
+        tls: {{ .Values.kafka.listeners.plain.tls }}
+      - name: tls
+        port: {{ .Values.kafka.listeners.tls.port }}
+        type: internal
+        tls: {{ .Values.kafka.listeners.tls.tls }}
+    config:
+      {{- toYaml .Values.kafka.config | nindent 6 }}
+  entityOperator:
+    {{- if .Values.entityOperator.topicOperator.enabled }}
+    topicOperator: {}
+    {{- end }}
+    {{- if .Values.entityOperator.userOperator.enabled }}
+    userOperator: {}
+    {{- end }}
