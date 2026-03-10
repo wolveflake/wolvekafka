@@ -1,8 +1,6 @@
-load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
 load("@rules_go//go:def.bzl", "go_binary", "go_library")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
-load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//go/wks/bazel_util:oci_push_do.bzl", "oci_push_do")
 
 go_library(
@@ -24,86 +22,46 @@ go_binary(
     visibility = ["//visibility:public"],
 )
 
-pkg_files(
-    name = "server_rootfs_files",
-    srcs = [":server_image_binary"],
-    attributes = pkg_attributes(mode = "0755"),
-    renames = {":server_image_binary": "server"},
-    strip_prefix = strip_prefix.files_only(),
+go_binary(
+    name = "server_linux_amd64",
+    embed = [":server_lib"],
+    goarch = "amd64",
+    goos = "linux",
     visibility = ["//visibility:private"],
 )
 
+# Package the binary into a tar layer.
 pkg_tar(
-    name = "server_rootfs",
-    srcs = [":server_rootfs_files"],
-    out = "server_rootfs.tar",
-    visibility = ["//visibility:private"],
+    name = "wks_layer",
+    srcs = [":server_linux_amd64"],
+    package_dir = "/usr/local/bin",
+    symlinks = {
+        "/usr/local/bin/server": "/usr/local/bin/server_linux_amd64",
+    },
 )
 
-genrule(
-    name = "server_image_binary",
-    srcs = [":server"],
-    outs = ["server_image_binary_bin"],
-    cmd = "cp $< $@ && chmod 0755 $@",
-    visibility = ["//visibility:private"],
-)
-
-# Build the image
+# Build OCI image.
 oci_image(
-    name = "image_linux",
-    base = "@ubuntu//:ubuntu",
-    # Entrypoint
-    entrypoint = ["/server"],
-    # Layers to add to the base image
-    tars = [":server_rootfs"],
+    name = "wks_image",
+    base = "@distroless_base",
+    entrypoint = ["/usr/local/bin/server"],
+    tars = [":wks_layer"],
     visibility = ["//visibility:public"],
 )
 
-# Local image for minikube development.
+# Docker-loadable tarball for local development (minikube, kind, etc.)
+# Usage: bazel build //go/wks/server:local_image --output_groups=+tarball
+#        minikube image load bazel-bin/go/wks/server/local_image/tarball.tar
 oci_load(
     name = "local_image",
-    image = ":image_linux",
-    repo_tags = ["ghcr.io/wolveflake/wks:latest"],
+    image = ":wks_image",
+    repo_tags = ["registry.digitalocean.com/wolveflake/wks:latest"],
 )
 
-# Push the image. The push rules stay in the host configuration so that the helper
-# binaries (crane/jq) chosen by rules_oci remain executable on macOS. The actual
-# container layers are transitioned to Linux via the filegroups defined below, so
-# no --platforms flag is required when running these targets.
+# Push to Digital Ocean container registry.
 oci_push_do(
-    name = "image_push",
-    image = ":transitioned_image_linux_amd64",
-    # tag(s) as a list
+    name = "push",
+    image = ":wks_image",
     remote_tags = ["latest"],
     repository = "registry.digitalocean.com/wolveflake/wks",
-)
-
-oci_push_do(
-    name = "image_push_arm64",
-    image = ":transitioned_image_linux_arm64",
-    # tag(s) as a list
-    remote_tags = ["latest"],
-    repository = "registry.digitalocean.com/wolveflake/wks",
-    visibility = ["//visibility:public"],
-)
-
-oci_push_do(
-    name = "image_push_linux",
-    image = ":image_linux",
-    # tag(s) as a list
-    remote_tags = ["latest"],
-    repository = "ghcr.io/wolveflake/wks",
-)
-
-# This is the target that should be released to the target platform
-platform_transition_filegroup(
-    name = "transitioned_image_linux_amd64",
-    srcs = [":image_linux"],
-    target_platform = "@rules_go//go/toolchain:linux_amd64",
-)
-
-platform_transition_filegroup(
-    name = "transitioned_image_linux_arm64",
-    srcs = [":image_linux"],
-    target_platform = "@rules_go//go/toolchain:linux_arm64",
 )
