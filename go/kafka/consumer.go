@@ -19,6 +19,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -40,6 +41,8 @@ const (
 	defaultBatchMaxWait = 500 * time.Millisecond
 )
 
+var errKafkaClientClosed = errors.New("kafka client closed")
+
 // KafkaConsumerClient is the minimal surface area required from a Kafka consumer implementation.
 type KafkaConsumerClient interface {
 	Poll(int) Event
@@ -50,6 +53,9 @@ type KafkaConsumerClient interface {
 type Consumer struct {
 	// consumer name.
 	name string
+
+	// subscribed topics.
+	topics []string
 
 	ctx context.Context
 
@@ -152,6 +158,7 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	return &Consumer{
 		ctx:              ctx,
 		name:             params.Name,
+		topics:           append([]string(nil), params.Topics...),
 		pollDurationMs:   int(pollDurationMs),
 		log:              log,
 		batchMaxMessages: batchMaxMessages,
@@ -174,6 +181,8 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 		batch := make([]*Message, 0, c.batchMaxMessages)
 		batchBytes := 0
 		var flushDeadline time.Time
+		pollDegraded := false
+		recoverablePollErrors := 0
 
 		flush := func() {
 			if len(batch) == 0 {
@@ -204,6 +213,17 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 			if event != nil {
 				switch e := event.(type) {
 				case *Message:
+					if pollDegraded {
+						c.log.Infof(
+							"Kafka poll recovered for consumer %q topics=%v after %d recoverable poll errors; delivering records again",
+							c.name,
+							c.topics,
+							recoverablePollErrors,
+						)
+						pollDegraded = false
+						recoverablePollErrors = 0
+					}
+
 					batch = append(batch, e)
 					batchBytes += approximateMessageSize(e)
 
@@ -216,9 +236,30 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 						flush()
 					}
 				case error:
-					c.log.Errorf("Kafka poll error: %v", e)
 					flush()
-					return
+					if errors.Is(e, errKafkaClientClosed) || c.ctx.Err() != nil {
+						return
+					}
+
+					recoverablePollErrors++
+					if !pollDegraded {
+						c.log.Errorf(
+							"Kafka poll failed for consumer %q topics=%v; worker will keep polling and should rejoin when Kafka is available: %v",
+							c.name,
+							c.topics,
+							e,
+						)
+						pollDegraded = true
+					} else if recoverablePollErrors%10 == 0 {
+						c.log.Warnf(
+							"Kafka poll still failing for consumer %q topics=%v after %d recoverable poll errors; last error: %v",
+							c.name,
+							c.topics,
+							recoverablePollErrors,
+							e,
+						)
+					}
+					time.Sleep(c.pollBackoff())
 				default:
 					// ignore other events
 				}
@@ -231,6 +272,17 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 	}()
 
 	return msgChan, nil
+}
+
+func (c *Consumer) pollBackoff() time.Duration {
+	backoff := time.Duration(c.pollDurationMs) * time.Millisecond
+	if backoff <= 0 {
+		return time.Duration(defaultPollDurationMs) * time.Millisecond
+	}
+	if backoff > time.Second {
+		return time.Second
+	}
+	return backoff
 }
 
 func approximateMessageSize(msg *Message) int {
@@ -285,12 +337,15 @@ func (f *franzConsumerAdapter) Poll(ms int) Event {
 
 	fetches := f.client.PollFetches(ctx)
 	if fetches.IsClientClosed() {
-		return fmt.Errorf("client closed")
+		return errKafkaClientClosed
 	}
 
 	errs := fetches.Errors()
-	if len(errs) > 0 {
-		return errs[0].Err
+	for _, fetchErr := range errs {
+		if errors.Is(fetchErr.Err, context.DeadlineExceeded) || errors.Is(fetchErr.Err, context.Canceled) {
+			continue
+		}
+		return fetchErr.Err
 	}
 
 	iter := fetches.RecordIter()
