@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "kafka_restart_test",
+    srcs = ["kafka_restart_integration_test.go"],
+    data = ["//thirdparty/kafka:kafka_image_tarball"],
+    deps = [
+        "//go/configs",
+        "//go/itest/fixture",
+        "//go/wks",
+        "//proto/configs",
+        "//proto/model",
+        "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)

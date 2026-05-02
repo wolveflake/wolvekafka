@@ -38,7 +38,6 @@ const (
 	defaultKafkaImageRef      = "kafka:4.1.0"
 	defaultKafkaBootstrapHost = "127.0.0.1:9092"
 	kafkaStartupScript        = `set -euo pipefail
-CLUSTER_ID=$(/opt/kafka/bin/kafka-storage.sh random-uuid)
 cat <<'CONFIG' >/tmp/server.properties
 process.roles=broker,controller
 node.id=1
@@ -57,7 +56,10 @@ group.initial.rebalance.delay.ms=0
 auto.create.topics.enable=true
 CONFIG
 mkdir -p /var/lib/kafka/data /var/lib/kafka/metadata
-/opt/kafka/bin/kafka-storage.sh format --ignore-formatted --cluster-id ${CLUSTER_ID} --config /tmp/server.properties
+if [ ! -f /var/lib/kafka/data/meta.properties ] && [ ! -f /var/lib/kafka/metadata/meta.properties ]; then
+  CLUSTER_ID=$(/opt/kafka/bin/kafka-storage.sh random-uuid)
+  /opt/kafka/bin/kafka-storage.sh format --cluster-id ${CLUSTER_ID} --config /tmp/server.properties
+fi
 exec /opt/kafka/bin/kafka-server-start.sh /tmp/server.properties`
 )
 
@@ -175,6 +177,33 @@ func (f *DockerFixture) Stop() {
 		f.stop()
 		f.stop = nil
 	}
+}
+
+// Restart stops and starts the Kafka container, then waits for bootstrap again.
+func (f *DockerFixture) Restart(ctx context.Context) {
+	f.tb.Helper()
+
+	if f.containerName == "" {
+		f.tb.Fatal("Kafka fixture has no container name")
+	}
+
+	stopCtx, stopCancel := context.WithTimeout(ctx, 45*time.Second)
+	defer stopCancel()
+	stopCmd := exec.CommandContext(stopCtx, "docker", "stop", "--time", "1", f.containerName)
+	stopCmd.Env = os.Environ()
+	if output, err := stopCmd.CombinedOutput(); err != nil {
+		f.tb.Fatalf("failed to stop Kafka container for restart: %v\n%s", err, string(output))
+	}
+
+	startCtx, startCancel := context.WithTimeout(ctx, 45*time.Second)
+	defer startCancel()
+	startCmd := exec.CommandContext(startCtx, "docker", "start", f.containerName)
+	startCmd.Env = os.Environ()
+	if output, err := startCmd.CombinedOutput(); err != nil {
+		f.tb.Fatalf("failed to start Kafka container after restart: %v\n%s", err, string(output))
+	}
+
+	waitForBootstrap(ctx, f.tb, f.bootstrapHost, f.containerName)
 }
 
 // VerifyConnection checks that Kafka responds with metadata using confluent-kafka-go.
