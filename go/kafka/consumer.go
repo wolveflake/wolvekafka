@@ -57,7 +57,9 @@ type Consumer struct {
 	// subscribed topics.
 	topics []string
 
-	ctx context.Context
+	ctx       context.Context
+	cancel    context.CancelFunc
+	batchDone chan struct{}
 
 	// polling duration in milliseconds.
 	pollDurationMs int
@@ -97,6 +99,8 @@ type ConsumerParams struct {
 
 	// Client allows injecting a Kafka consumer implementation (for testing).
 	Client KafkaConsumerClient
+	// RequireBatchAck holds partition ownership until CompleteBatch is called.
+	RequireBatchAck bool
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
@@ -109,24 +113,34 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 	}
 
 	if params.Cluster == nil {
+		consumer.cancel()
 		return nil, fmt.Errorf("cluster configuration is required")
 	}
 
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(params.Cluster.BootstrapServers...),
+	opts, err := ConnectionOptions(params.Cluster)
+	if err != nil {
+		consumer.cancel()
+		return nil, err
+	}
+	opts = append(opts,
 		kgo.ConsumerGroup(params.Name),
 		kgo.ConsumeTopics(params.Topics...),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
+		kgo.DisableAutoCommit(),
+	)
+	if params.RequireBatchAck {
+		opts = append(opts, kgo.BlockRebalanceOnPoll())
 	}
 
 	franzClient, err := kgo.NewClient(opts...)
 	if err != nil {
+		consumer.cancel()
 		consumer.log.Errorf("Failed to create %v consumer: %v", params.Name, err)
 		return nil, err
 	}
 
 	consumer.franzClient = franzClient
-	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, pollDuration: time.Duration(consumer.pollDurationMs) * time.Millisecond}
+	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, ctx: consumer.ctx}
 
 	return consumer, nil
 }
@@ -154,9 +168,16 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 	}
 
 	log := logger.S()
+	ctx, cancel := context.WithCancel(ctx)
+	var batchDone chan struct{}
+	if params.RequireBatchAck {
+		batchDone = make(chan struct{})
+	}
 
 	return &Consumer{
 		ctx:              ctx,
+		cancel:           cancel,
+		batchDone:        batchDone,
 		name:             params.Name,
 		topics:           append([]string(nil), params.Topics...),
 		pollDurationMs:   int(pollDurationMs),
@@ -196,6 +217,15 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 			case <-c.ctx.Done():
 				// drop if context is cancelled.
 			case msgChan <- out:
+				if c.batchDone != nil {
+					select {
+					case <-c.ctx.Done():
+					case <-c.batchDone:
+					}
+					if c.franzClient != nil {
+						c.franzClient.AllowRebalance()
+					}
+				}
 			}
 
 			batch = batch[:0]
@@ -268,6 +298,9 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 			if len(batch) > 0 && c.batchMaxWait > 0 && !flushDeadline.IsZero() && time.Now().After(flushDeadline) {
 				flush()
 			}
+			if len(batch) == 0 && c.batchDone != nil && c.franzClient != nil {
+				c.franzClient.AllowRebalance()
+			}
 		}
 	}()
 
@@ -300,13 +333,22 @@ func approximateMessageSize(msg *Message) int {
 
 // Close closes the Kafka consumer.
 func (c *Consumer) Close() error {
-	if c.franzClient != nil {
-		c.franzClient.Close()
-	}
+	c.cancel()
 	if c.kafkaConsumer == nil {
 		return nil
 	}
 	return c.kafkaConsumer.Close()
+}
+
+// CompleteBatch releases the polling loop only after every record is resolved
+// and its offset committed. Cancellation leaves the batch available for replay.
+func (c *Consumer) CompleteBatch() {
+	if c.batchDone != nil {
+		select {
+		case c.batchDone <- struct{}{}:
+		case <-c.ctx.Done():
+		}
+	}
 }
 
 // CommitMessage commits the offset of the provided message.
@@ -319,27 +361,25 @@ func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 
 // franzConsumerAdapter adapts franz-go client to the KafkaConsumerClient interface.
 type franzConsumerAdapter struct {
-	client       *kgo.Client
-	pollDuration time.Duration
-	pending      []*Message
+	client *kgo.Client
+	ctx    context.Context
 }
 
 func (f *franzConsumerAdapter) Poll(ms int) Event {
-	// Return buffered records from a previous fetch first.
-	if len(f.pending) > 0 {
-		record := f.pending[0]
-		f.pending = f.pending[1:]
-		return record
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(ms)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(f.ctx, time.Duration(ms)*time.Millisecond)
 	defer cancel()
 
-	fetches := f.client.PollFetches(ctx)
+	fetches := f.client.PollRecords(ctx, 1)
 	if fetches.IsClientClosed() {
 		return errKafkaClientClosed
 	}
 
+	// A fetch can contain records and errors from different partitions. Deliver
+	// records first; returning an error must never discard fetched records.
+	iter := fetches.RecordIter()
+	if !iter.Done() {
+		return iter.Next()
+	}
 	errs := fetches.Errors()
 	for _, fetchErr := range errs {
 		if errors.Is(fetchErr.Err, context.DeadlineExceeded) || errors.Is(fetchErr.Err, context.Canceled) {
@@ -348,20 +388,11 @@ func (f *franzConsumerAdapter) Poll(ms int) Event {
 		return fetchErr.Err
 	}
 
-	iter := fetches.RecordIter()
-	if iter.Done() {
-		return nil
-	}
-
-	first := iter.Next()
-	for !iter.Done() {
-		f.pending = append(f.pending, iter.Next())
-	}
-	return first
+	return nil
 }
 
 func (f *franzConsumerAdapter) Close() error {
-	f.client.Close()
+	f.client.CloseAllowingRebalance()
 	return nil
 }
 
@@ -370,8 +401,9 @@ func (f *franzConsumerAdapter) CommitMessage(msg *Message) ([]TopicPartition, er
 		return nil, fmt.Errorf("message is required")
 	}
 
-	f.client.MarkCommitRecords(msg)
-	if err := f.client.CommitMarkedOffsets(context.Background()); err != nil {
+	ctx, cancel := context.WithTimeout(f.ctx, 10*time.Second)
+	defer cancel()
+	if err := f.client.CommitRecords(ctx, msg); err != nil {
 		return nil, err
 	}
 

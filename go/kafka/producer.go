@@ -62,18 +62,24 @@ func NewProducer(ctx context.Context, params ProducerParams) (*Producer, error) 
 	producer := newProducer(ctx, params)
 
 	if params.Cluster == nil {
+		producer.ctxCancel()
 		return nil, fmt.Errorf("cluster configuration is required")
 	}
 
 	// create Kafka producer.
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(params.Cluster.BootstrapServers...),
+	opts, err := ConnectionOptions(params.Cluster)
+	if err != nil {
+		producer.ctxCancel()
+		return nil, err
+	}
+	opts = append(opts,
 		kgo.ClientID(params.Name),
 		kgo.RequiredAcks(kgo.AllISRAcks()), // Require all in-sync replicas to acknowledge
-	}
+	)
 
 	kafkaProducer, err := kgo.NewClient(opts...)
 	if err != nil {
+		producer.ctxCancel()
 		producer.log.Errorf("Failed to create %v producer: %v", params.Name, err)
 		return nil, err
 	}

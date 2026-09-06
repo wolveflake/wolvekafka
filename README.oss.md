@@ -1,5 +1,5 @@
 <!-- DRAFT OSS README for WolveKafka (WKS). Replace the existing demo README.md at launch.
-     Pre-launch blockers before this is true: wire SASL+TLS (see docs/positioning-vs-competitors.md),
+     Pre-launch blockers before this is true: validate release packaging,
      relicense to Apache-2.0/MIT, and confirm the quickstart end-to-end. -->
 
 # WolveKafka (WKS)
@@ -117,8 +117,8 @@ python3 handler.py    # listens on :8081
 
 ```bash
 # via the released binary / image
-wks --config ./config.json
-# or from source: bazel run //go/wks/server -- --config ./config.json
+wks --config_path ./config.json
+# or from source: bazel run //go/wks/server -- --config_path ./config.json
 ```
 
 **5. Produce a message and watch it flow:**
@@ -138,7 +138,8 @@ pointed at your Prometheus to get the prebuilt dashboard.
 ## Configuration reference (essentials)
 
 - **`cluster.bootstrap_servers`** — your Kafka brokers.
-  <!-- LAUNCH BLOCKER: add sasl_username/password + TLS wiring; today only PLAINTEXT works. -->
+  SASL/PLAIN, SCRAM-SHA-256/512, TLS and mTLS are supported; see the
+  [security configuration](docs/delivery-and-security.md).
 - **`consumers[]`**
   - `group_id`, `topics[]`
   - `lambdas[]` — `{ url, weight }`; multiple targets are load-balanced by `weight`.
@@ -153,9 +154,10 @@ restart.
 
 ## Delivery guarantees
 
-**At-least-once.** Offsets commit only after your handler returns success, so a crash
-mid-flight redelivers. Make handlers idempotent (dedupe on `topic/partition/offset` or a
-business key).
+**At-least-once.** Offsets commit after handler success and required output writes,
+or after an explicit drop/durable DLQ action. A crash before commit can redeliver.
+Make handlers idempotent (dedupe on `topic/partition/offset` or a business key).
+See [delivery semantics and reload behavior](docs/delivery-and-security.md).
 
 ## Status
 

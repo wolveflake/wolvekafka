@@ -36,6 +36,8 @@ type LambdaSelector struct {
 }
 
 func NewLambdaSelector(lambdas []*configs_pb.Lambda) *LambdaSelector {
+	// Each worker owns its ordering; never sort the shared config slice.
+	lambdas = append([]*configs_pb.Lambda(nil), lambdas...)
 	// total lambas weight
 	totalWeight := int64(0)
 	for _, lambda := range lambdas {

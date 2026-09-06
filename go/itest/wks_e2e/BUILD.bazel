@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_test")
 
 go_test(
     name = "wks_e2e_test",
-    srcs = ["wks_e2e_integration_test.go"],
+    srcs = [
+        "delivery_integration_test.go",
+        "wks_e2e_integration_test.go",
+    ],
     deps = [
         "//go/configs",
         "//go/itest/fixture",

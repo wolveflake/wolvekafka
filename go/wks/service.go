@@ -19,6 +19,7 @@ package wks
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"wolvekafka/go/common/logger"
@@ -69,6 +70,8 @@ type consumerRef struct {
 	jobs        []*ProcessingJob
 	executor    *executor.WorkPoolExecutor
 	consumerCfg *configs_pb.Consumer
+	clusterCfg  *configs_pb.Cluster
+	wait        *sync.WaitGroup
 }
 
 // NewWolveKafkaService creates a new WKS service instance.
@@ -99,32 +102,45 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 	s.consumers.Store(make(map[string]*consumerRef))
 
 	// initial configuration.
-	s.updateConfig(params.Config)
+	if err := s.updateConfig(params.Config); err != nil {
+		cancelFunc()
+		return nil, err
+	}
 
 	return s, nil
 }
 
 // updateConfig updates the service configuration.
-func (w *WolveKafkaService) updateConfig(config *configs.Config) {
+func (w *WolveKafkaService) updateConfig(config *configs.Config) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if config == nil {
-		w.log.Warn("received nil config; skipping update")
-		return
+		return fmt.Errorf("configuration is required")
 	}
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := kafka.ConnectionOptions(config.Cluster()); err != nil {
+		return err
+	}
+	clusterCfg := proto.Clone(config.Cluster()).(*configs_pb.Cluster)
 
 	if w.metrics != nil {
 		w.metrics.recordConfigApplied(w.ctx, len(config.Consumers()))
 	}
 
-	currentConsumers := w.consumers.Load().(map[string]*consumerRef)
+	currentConsumers := make(map[string]*consumerRef)
+	for name, ref := range w.consumers.Load().(map[string]*consumerRef) {
+		currentConsumers[name] = ref
+	}
 	newConsumers := make(map[string]*consumerRef)
 
 	for _, consumerCfg := range config.Consumers() {
+		consumerCfg = proto.Clone(consumerCfg).(*configs_pb.Consumer)
 		consumerName := consumerCfg.GetGroupId()
 		if existingConsumer, exists := currentConsumers[consumerName]; exists {
-			if proto.Equal(existingConsumer.consumerCfg, consumerCfg) {
+			if proto.Equal(existingConsumer.consumerCfg, consumerCfg) && proto.Equal(existingConsumer.clusterCfg, clusterCfg) {
 				// Config unchanged — keep existing consumer.
 				newConsumers[consumerName] = existingConsumer
 				delete(currentConsumers, consumerName)
@@ -152,6 +168,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 			w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
 		} else {
 			jobs := make([]*ProcessingJob, workPoolParams.NumWorkers)
+			wait := &sync.WaitGroup{}
 			// generate consumer job and submit to work pool
 			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
 			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
@@ -168,7 +185,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					// logger instance.
 					log:         w.log,
 					consumerCfg: consumerCfg,
-					clusterCfg:  config.Cluster(),
+					clusterCfg:  clusterCfg,
 
 					// output policy.
 					outputPolicy: NewOutputPolicy(OutputPolicyParams{
@@ -178,7 +195,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					newConsumerFunc: w.newConsumerFunc,
 					metrics:         w.metrics,
 				}
-				workPool.Process(job)
+				workPool.ProcessWithWaitGroup(job, wait)
 				jobs[idx] = job
 			}
 			if w.metrics != nil {
@@ -188,6 +205,8 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 				jobs:        jobs,
 				executor:    workPool,
 				consumerCfg: consumerCfg,
+				clusterCfg:  clusterCfg,
+				wait:        wait,
 			}
 		}
 	}
@@ -205,12 +224,16 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 	}
 
 	w.consumers.Store(newConsumers)
+	return nil
 }
 
 // stopProcessingJobs stops all jobs for a given consumer.
 func (w *WolveKafkaService) stopProcessingJobs(consumerRef *consumerRef) {
 	for _, job := range consumerRef.jobs {
 		job.ctxCancel()
+	}
+	if consumerRef.wait != nil {
+		consumerRef.wait.Wait()
 	}
 }
 
@@ -222,6 +245,8 @@ func (w *WolveKafkaService) Close() error {
 	if w.ctxCancel != nil {
 		w.ctxCancel()
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	consumers := w.consumers.Load().(map[string]*consumerRef)
 	for _, ref := range consumers {
 		if ref == nil {

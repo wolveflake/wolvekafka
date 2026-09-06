@@ -3,6 +3,7 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "kafka",
     srcs = [
+        "connection.go",
         "consumer.go",
         "producer.go",
         "types.go",
@@ -11,8 +12,11 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//go/common/logger",
+        "//go/configs",
         "//proto/configs",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go//pkg/sasl/plain",
+        "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -20,13 +24,16 @@ go_library(
 go_test(
     name = "kafka_test",
     srcs = [
+        "connection_test.go",
         "consumer_test.go",
         "producer_test.go",
     ],
     embed = [":kafka"],
     deps = [
+        "//proto/configs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go//pkg/sasl",
     ],
 )

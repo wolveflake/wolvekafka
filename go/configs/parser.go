@@ -18,13 +18,13 @@
 package configs
 
 import (
-	"encoding/json"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	configs_pb "wolvekafka/proto/configs"
 )
 
 func ParseConfigsJson(jsonBytes []byte) (*configs_pb.Config, error) {
 	cfg := &configs_pb.Config{}
-	err := json.Unmarshal(jsonBytes, cfg)
+	err := protojson.Unmarshal(jsonBytes, cfg)
 	return cfg, err
 }

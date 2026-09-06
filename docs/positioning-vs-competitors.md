@@ -78,13 +78,11 @@ Managed "Kafka → your function."
 
 ## Gaps that will get flamed on HN — fix or disclose *before* launch
 
-1. **🔴 Cannot connect to secured/cloud Kafka.** `sasl_username`/`sasl_password` exist in
-   the config schema but are **never wired into the client** — the franz-go client sets
-   only `SeedBrokers` + `ConsumerGroup`, no `kgo.SASL(...)` and no TLS. So WKS talks only
-   to **plaintext, unauthenticated** Kafka today. It cannot reach Confluent Cloud, MSK,
-   Aiven, or Redpanda Cloud. Advertising SASL fields that silently do nothing is worse
-   than omitting them. **This is table stakes and must ship in v0.** (SASL/PLAIN + SCRAM +
-   TLS/SASL_SSL, ideally mTLS and AWS-MSK-IAM.)
+1. **Secured Kafka support needs provider validation.** SASL/PLAIN,
+   SCRAM-SHA-256/512, TLS and mTLS are now wired into consumers, output producers,
+   and DLQ producers. See [configuration and delivery semantics](delivery-and-security.md).
+   OAuth and AWS-MSK-IAM are not implemented; managed-provider compatibility has
+   not yet been certified.
 2. **No connector ecosystem** — Kafka-in/Kafka-out only. Say so plainly; it's the scope,
    not a bug, but reviewers will compare to Benthos/Connect connector counts.
 3. **No in-stream transforms / Schema Registry** — every transform is an HTTP round-trip;
@@ -111,9 +109,8 @@ committing to a developer-facing wedge. To make the launch land:
 - **Position narrowly:** "any HTTP service → production Kafka consumer." Cede transforms
   and connectors to Benthos/Connect explicitly (a "When *not* to use WKS" section earns
   trust and pre-empts the top HN comment).
-- **Ship the must-fixes first:** SASL+TLS (so it works with real clusters), relicense, and
-  a friction-free handler mode. Without SASL/TLS the launch fails on contact with anyone
-  who runs managed Kafka — i.e. most of the audience.
+- **Ship the must-fixes first:** validate secured connections with managed providers,
+  relicense, and verify a reproducible quickstart and the delivery failure tests.
 - **Lead the README with a 5-minute quickstart** that beats Connect's and Benthos's
   first-five-minutes, and show the Grafana dashboard as the "wow." (Draft in `README.oss.md`.)
 - Then WolveFlow is the natural "now orchestrate these consumers into workflows" upsell —
