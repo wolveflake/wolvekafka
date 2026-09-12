@@ -1,6 +1,6 @@
 <!-- DRAFT OSS README for WolveKafka (WKS). Replace the existing demo README.md at launch.
-     Pre-launch blockers before this is true: validate release packaging,
-     relicense to Apache-2.0/MIT, and confirm the quickstart end-to-end. -->
+     Pre-launch blockers before this is true: validate release packaging
+     and confirm the quickstart end-to-end. -->
 
 # WolveKafka (WKS)
 
@@ -168,6 +168,5 @@ comparison and roadmap. Issues and PRs welcome.
 
 ## License
 
-<!-- LAUNCH BLOCKER: relicense repo to Apache-2.0 (recommended) or MIT and strip the
-     "CONFIDENTIAL / All Rights Reserved" headers before publishing. -->
-TBD (Apache-2.0 intended).
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Copyright 2023-2026 Wolveflake LLC (https://wolveflake.io).
