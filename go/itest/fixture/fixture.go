@@ -151,12 +151,17 @@ func (f *DockerFixture) Start(ctx context.Context) {
 		f.tb.Skipf("docker is required for Kafka integration tests: %v", err)
 	}
 
-	loader := f.loaderScript
-	if loader == "" {
-		loader = findKafkaLoaderScript(f.tb)
+	if image := os.Getenv("WKS_TEST_KAFKA_IMAGE"); image != "" {
+		// Explicit opt-in for a preloaded image with the fixture's /opt/kafka
+		// layout. Useful when running regression tests without rebuilding it.
+		f.imageRef = image
+	} else {
+		loader := f.loaderScript
+		if loader == "" {
+			loader = findKafkaLoaderScript(f.tb)
+		}
+		ensureKafkaImageLoaded(f.tb, loader)
 	}
-
-	ensureKafkaImageLoaded(f.tb, loader)
 
 	stopContainer := startKafkaContainer(ctx, f.tb, f.containerName, f.imageRef, f.startupScript)
 	f.stop = func() {

@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package configs;
-option go_package = "wolveflow/proto/configs";
+option go_package = "wolvekafka/proto/configs";
 
 // Cluster holds the configuration details for connecting to a Kafka cluster.
 message Cluster {
@@ -13,4 +13,19 @@ message Cluster {
 
   // SASL password for authenticating with the Kafka cluster.
 	string sasl_password = 5;
+
+  // PLAIN (default when credentials are set), SCRAM-SHA-256 or SCRAM-SHA-512.
+  string sasl_mechanism = 6;
+  TLS tls = 7;
+}
+
+message TLS {
+  bool enabled = 1;
+  // Optional PEM CA bundle; system roots are used when omitted.
+  string ca_file = 2;
+  // Optional mTLS client certificate and private key; both must be supplied.
+  string cert_file = 3;
+  string key_file = 4;
+  // Optional override for certificate hostname verification.
+  string server_name = 5;
 }

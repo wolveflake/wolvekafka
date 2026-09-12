@@ -75,15 +75,15 @@ func TestBasic(t *testing.T) {
 			params.Client = clientSource.NewClient()
 			return kafka.NewConsumer(ctx, params)
 		},
-		sendEventFunc: func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+		sendEventFunc: func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error) {
 			lambdaReqChan <- req
-			return &model_pb.LambdaResponse{
+			return &BatchResult{Request: req, Response: &model_pb.LambdaResponse{
 				Messages: []*model_pb.ResponseMessage{
 					&model_pb.ResponseMessage{
 						Status: model_pb.ResponseStatus_STATUS_SUCCESS,
 					},
 				},
-			}, nil
+			}}, nil
 		},
 	})
 	assert.NoError(t, err)

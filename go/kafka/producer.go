@@ -20,6 +20,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
@@ -44,7 +45,9 @@ type Producer struct {
 	log *zap.SugaredLogger
 
 	// polling function (mostly for testing purposes).
-	ProducerFunc ProducerFunc
+	ProducerFunc     ProducerFunc
+	ProduceBatchFunc func([]*Message) error
+	closeOnce        sync.Once
 }
 
 type ProducerParams struct {
@@ -62,18 +65,25 @@ func NewProducer(ctx context.Context, params ProducerParams) (*Producer, error) 
 	producer := newProducer(ctx, params)
 
 	if params.Cluster == nil {
+		producer.ctxCancel()
 		return nil, fmt.Errorf("cluster configuration is required")
 	}
 
 	// create Kafka producer.
-	opts := []kgo.Opt{
-		kgo.SeedBrokers(params.Cluster.BootstrapServers...),
+	opts, err := ConnectionOptions(params.Cluster)
+	if err != nil {
+		producer.ctxCancel()
+		return nil, err
+	}
+	opts = append(opts,
+		kgo.WithContext(producer.ctx),
 		kgo.ClientID(params.Name),
 		kgo.RequiredAcks(kgo.AllISRAcks()), // Require all in-sync replicas to acknowledge
-	}
+	)
 
 	kafkaProducer, err := kgo.NewClient(opts...)
 	if err != nil {
+		producer.ctxCancel()
 		producer.log.Errorf("Failed to create %v producer: %v", params.Name, err)
 		return nil, err
 	}
@@ -129,6 +139,9 @@ func (c *Producer) Produce(ctx context.Context, msg *Message) error {
 
 // ProduceBatch sends multiple messages to Kafka in a single synchronous call.
 func (c *Producer) ProduceBatch(ctx context.Context, msgs []*Message) error {
+	if c.ProduceBatchFunc != nil {
+		return c.ProduceBatchFunc(msgs)
+	}
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -156,13 +169,13 @@ func (c *Producer) ProduceBatch(ctx context.Context, msgs []*Message) error {
 
 // Close closes the Kafka producer.
 func (c *Producer) Close() error {
-	c.ctxCancel()
-
-	// no instance in tests.
-	if c.kafkaProducer == nil {
-		return nil
-	}
-
-	c.kafkaProducer.Close()
+	c.closeOnce.Do(func() {
+		if c.ctxCancel != nil {
+			c.ctxCancel()
+		}
+		if c.kafkaProducer != nil {
+			c.kafkaProducer.Close()
+		}
+	})
 	return nil
 }

@@ -19,8 +19,10 @@ package wks
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 	"wolvekafka/go/common/logger"
 	"wolvekafka/go/configs"
 	"wolvekafka/go/kafka"
@@ -48,7 +50,8 @@ type WolveKafkaService struct {
 
 	metrics *instrumentation
 
-	mu        sync.Mutex   // one config update at a time.
+	updateMu  sync.Mutex // serialize updates without blocking Close during teardown.
+	mu        sync.Mutex
 	consumers atomic.Value // map[string]*consumerRef
 
 	sendEventFunc   sendEventFunc
@@ -69,6 +72,8 @@ type consumerRef struct {
 	jobs        []*ProcessingJob
 	executor    *executor.WorkPoolExecutor
 	consumerCfg *configs_pb.Consumer
+	clusterCfg  *configs_pb.Cluster
+	wait        *sync.WaitGroup
 }
 
 // NewWolveKafkaService creates a new WKS service instance.
@@ -99,32 +104,66 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 	s.consumers.Store(make(map[string]*consumerRef))
 
 	// initial configuration.
-	s.updateConfig(params.Config)
+	if err := s.updateConfig(params.Config); err != nil {
+		cancelFunc()
+		return nil, err
+	}
 
 	return s, nil
 }
 
 // updateConfig updates the service configuration.
-func (w *WolveKafkaService) updateConfig(config *configs.Config) {
+func (w *WolveKafkaService) updateConfig(config *configs.Config) error {
+	w.updateMu.Lock()
+	defer w.updateMu.Unlock()
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if config == nil {
-		w.log.Warn("received nil config; skipping update")
-		return
+		return fmt.Errorf("configuration is required")
 	}
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := kafka.ConnectionOptions(config.Cluster()); err != nil {
+		return err
+	}
+	clusterCfg := proto.Clone(config.Cluster()).(*configs_pb.Cluster)
 
 	if w.metrics != nil {
 		w.metrics.recordConfigApplied(w.ctx, len(config.Consumers()))
 	}
 
-	currentConsumers := w.consumers.Load().(map[string]*consumerRef)
+	currentConsumers := make(map[string]*consumerRef)
+	for name, ref := range w.consumers.Load().(map[string]*consumerRef) {
+		currentConsumers[name] = ref
+	}
 	newConsumers := make(map[string]*consumerRef)
+	desired := make(map[string]*configs_pb.Consumer)
+	for _, cfg := range config.Consumers() {
+		desired[cfg.GetGroupId()] = cfg
+	}
+	var stopping []*consumerRef
+	for name, ref := range currentConsumers {
+		if !proto.Equal(ref.consumerCfg, desired[name]) || !proto.Equal(ref.clusterCfg, clusterCfg) {
+			stopping = append(stopping, ref)
+		}
+	}
+	w.mu.Unlock()
+	err := stopConsumers(stopping, 5*time.Second)
+	w.mu.Lock()
+	if err != nil {
+		return err
+	}
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
 
 	for _, consumerCfg := range config.Consumers() {
+		consumerCfg = proto.Clone(consumerCfg).(*configs_pb.Consumer)
 		consumerName := consumerCfg.GetGroupId()
 		if existingConsumer, exists := currentConsumers[consumerName]; exists {
-			if proto.Equal(existingConsumer.consumerCfg, consumerCfg) {
+			if proto.Equal(existingConsumer.consumerCfg, consumerCfg) && proto.Equal(existingConsumer.clusterCfg, clusterCfg) {
 				// Config unchanged — keep existing consumer.
 				newConsumers[consumerName] = existingConsumer
 				delete(currentConsumers, consumerName)
@@ -132,7 +171,6 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 			}
 			// Config changed — stop old consumer so it gets recreated below.
 			w.log.Infof("config changed for consumer %s, recreating", consumerName)
-			w.stopProcessingJobs(existingConsumer)
 			existingConsumer.executor.Configure(executor.WorkPoolExecutorParams{NumWorkers: 0})
 			delete(currentConsumers, consumerName)
 		}
@@ -152,6 +190,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 			w.log.Errorf("failed to configure work pool for consumer %s: %s", consumerName, err)
 		} else {
 			jobs := make([]*ProcessingJob, workPoolParams.NumWorkers)
+			wait := &sync.WaitGroup{}
 			// generate consumer job and submit to work pool
 			w.log.Infof("starting workers: %s, size: %v", consumerName, workPoolParams.NumWorkers)
 			for idx := 0; idx < workPoolParams.NumWorkers; idx++ {
@@ -168,7 +207,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					// logger instance.
 					log:         w.log,
 					consumerCfg: consumerCfg,
-					clusterCfg:  config.Cluster(),
+					clusterCfg:  clusterCfg,
 
 					// output policy.
 					outputPolicy: NewOutputPolicy(OutputPolicyParams{
@@ -178,7 +217,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 					newConsumerFunc: w.newConsumerFunc,
 					metrics:         w.metrics,
 				}
-				workPool.Process(job)
+				workPool.ProcessWithWaitGroup(job, wait)
 				jobs[idx] = job
 			}
 			if w.metrics != nil {
@@ -188,6 +227,8 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 				jobs:        jobs,
 				executor:    workPool,
 				consumerCfg: consumerCfg,
+				clusterCfg:  clusterCfg,
+				wait:        wait,
 			}
 		}
 	}
@@ -198,19 +239,41 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) {
 		if w.metrics != nil {
 			w.metrics.recordConsumerLifecycle(w.ctx, consumerName, -1)
 		}
-		w.stopProcessingJobs(exec)
 		exec.executor.Configure(executor.WorkPoolExecutorParams{
 			NumWorkers: 0,
 		})
 	}
 
 	w.consumers.Store(newConsumers)
+	return nil
 }
 
-// stopProcessingJobs stops all jobs for a given consumer.
-func (w *WolveKafkaService) stopProcessingJobs(consumerRef *consumerRef) {
-	for _, job := range consumerRef.jobs {
-		job.ctxCancel()
+// Cancel every group before waiting, with one shared teardown budget.
+func stopConsumers(refs []*consumerRef, timeout time.Duration) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	for _, ref := range refs {
+		for _, job := range ref.jobs {
+			job.ctxCancel()
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		for _, ref := range refs {
+			if ref.wait != nil {
+				ref.wait.Wait()
+			}
+		}
+		close(done)
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return nil
+	case <-timer.C:
+		return fmt.Errorf("consumer shutdown exceeded %v; refusing to start overlapping workers", timeout)
 	}
 }
 
@@ -222,15 +285,18 @@ func (w *WolveKafkaService) Close() error {
 	if w.ctxCancel != nil {
 		w.ctxCancel()
 	}
+	w.mu.Lock()
 	consumers := w.consumers.Load().(map[string]*consumerRef)
+	w.mu.Unlock()
+	var refs []*consumerRef
 	for _, ref := range consumers {
 		if ref == nil {
 			continue
 		}
-		w.stopProcessingJobs(ref)
+		refs = append(refs, ref)
 		if ref.executor != nil {
 			_ = ref.executor.Configure(executor.WorkPoolExecutorParams{NumWorkers: 0})
 		}
 	}
-	return nil
+	return stopConsumers(refs, 5*time.Second)
 }

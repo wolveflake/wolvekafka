@@ -20,12 +20,10 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
-	"os"
+	"time"
 
 	"wolvekafka/go/common/logger"
 	server "wolvekafka/go/common/server"
-	"wolvekafka/go/configs"
 	"wolvekafka/go/wks"
 )
 
@@ -37,7 +35,7 @@ var (
 func main() {
 	flag.Parse()
 
-	cfg, err := loadConfig(*configPath)
+	cfg, err := wks.LoadConfigFromFile(*configPath)
 	if err != nil {
 		logger.S().Fatalf("failed to load config: %v", err)
 	}
@@ -57,26 +55,8 @@ func main() {
 			logger.S().Warnf("failed to stop WKS service: %v", closeErr)
 		}
 	}()
+	go wksService.WatchConfig(ctx, *configPath, 10*time.Second)
 	if err := srv.Serve(); err != nil {
 		logger.S().Fatalf("server stopped: %v", err)
 	}
-}
-
-func loadConfig(path string) (*configs.Config, error) {
-	if path == "" {
-		return nil, fmt.Errorf("config path cannot be empty")
-	}
-	contents, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config file: %w", err)
-	}
-	protoCfg, err := configs.ParseConfigsJson(contents)
-	if err != nil {
-		return nil, fmt.Errorf("parse config json: %w", err)
-	}
-	cfg, err := configs.NewConfigFromProto(protoCfg)
-	if err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
-	}
-	return cfg, nil
 }

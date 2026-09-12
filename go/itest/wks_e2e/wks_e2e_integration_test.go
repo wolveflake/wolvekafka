@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"wolvekafka/go/configs"
@@ -73,6 +73,7 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 
 	topic := fmt.Sprintf("wks-e2e-topic-%d", time.Now().UnixNano())
 	groupID := fmt.Sprintf("wks-e2e-group-%d", time.Now().UnixNano())
+	createTestTopics(t, ctx, fixture.BootstrapHost(), topic)
 
 	cfgProto := &configs_pb.Config{
 		Cluster: &configs_pb.Cluster{
@@ -96,6 +97,7 @@ func TestWolveKafkaServiceEndToEnd(t *testing.T) {
 	service, err := wks.NewWolveKafkaService(ctx, wks.WolveKafkaParams{Config: cfg})
 	require.NoError(t, err)
 	require.NotNil(t, service)
+	defer service.Close()
 
 	// Produce a message the service should consume.
 	producer, err := kgo.NewClient(
@@ -174,6 +176,7 @@ func TestWolveKafkaServiceKafkaOutputFanout(t *testing.T) {
 	outputTopic := fmt.Sprintf("wks-e2e-output-%d", time.Now().UnixNano())
 	groupInput := fmt.Sprintf("wks-e2e-input-group-%d", time.Now().UnixNano())
 	groupOutput := fmt.Sprintf("wks-e2e-output-group-%d", time.Now().UnixNano())
+	createTestTopics(t, ctx, fixture.BootstrapHost(), inputTopic, outputTopic)
 
 	lambda1Payload := []byte(`{"from":"lambda1"}`)
 	// First lambda returns JSON which the output policy should forward to the next topic.
@@ -288,6 +291,7 @@ func TestWolveKafkaServiceKafkaOutputFanout(t *testing.T) {
 	service, err := wks.NewWolveKafkaService(ctx, wks.WolveKafkaParams{Config: cfg})
 	require.NoError(t, err)
 	require.NotNil(t, service)
+	defer service.Close()
 
 	// Inject a message into the first consumer's topic to drive the pipeline.
 	producer, err := kgo.NewClient(
@@ -321,4 +325,14 @@ func TestWolveKafkaServiceKafkaOutputFanout(t *testing.T) {
 	case <-time.After(60 * time.Second):
 		t.Fatal("timeout waiting for lambda2 invocation")
 	}
+}
+
+func createTestTopics(t *testing.T, ctx context.Context, broker string, topics ...string) {
+	t.Helper()
+	client, err := kgo.NewClient(kgo.SeedBrokers(broker))
+	require.NoError(t, err)
+	defer client.Close()
+	created, err := kadm.NewClient(client).CreateTopics(ctx, 1, 1, nil, topics...)
+	require.NoError(t, err)
+	require.NoError(t, created.Error())
 }
