@@ -21,8 +21,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
 
@@ -57,9 +59,17 @@ type Consumer struct {
 	// subscribed topics.
 	topics []string
 
-	ctx       context.Context
-	cancel    context.CancelFunc
-	batchDone chan struct{}
+	ctx         context.Context
+	cancel      context.CancelFunc
+	batchDone   chan bool
+	stateMu     sync.Mutex
+	batchCtx    context.Context
+	batchCancel context.CancelFunc
+	pollStarted bool
+	closed      bool
+	pollDone    chan struct{}
+	closeOnce   sync.Once
+	closeErr    error
 
 	// polling duration in milliseconds.
 	pollDurationMs int
@@ -129,7 +139,13 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 		kgo.DisableAutoCommit(),
 	)
 	if params.RequireBatchAck {
-		opts = append(opts, kgo.BlockRebalanceOnPoll())
+		opts = append(opts, kgo.BlockRebalanceOnPoll(), kgo.OnPartitionsCallbackBlocked(func(context.Context, *kgo.Client) {
+			consumer.stateMu.Lock()
+			defer consumer.stateMu.Unlock()
+			if consumer.batchCancel != nil {
+				consumer.batchCancel()
+			}
+		}))
 	}
 
 	franzClient, err := kgo.NewClient(opts...)
@@ -169,15 +185,16 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 
 	log := logger.S()
 	ctx, cancel := context.WithCancel(ctx)
-	var batchDone chan struct{}
+	var batchDone chan bool
 	if params.RequireBatchAck {
-		batchDone = make(chan struct{})
+		batchDone = make(chan bool)
 	}
 
 	return &Consumer{
 		ctx:              ctx,
 		cancel:           cancel,
 		batchDone:        batchDone,
+		pollDone:         make(chan struct{}),
 		name:             params.Name,
 		topics:           append([]string(nil), params.Topics...),
 		pollDurationMs:   int(pollDurationMs),
@@ -190,13 +207,23 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 
 // Poll polls messages from Kafka and delivers them in batches bounded by the configured limits.
 func (c *Consumer) Poll() (chan []*Message, error) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.closed || c.pollStarted {
+		return nil, fmt.Errorf("consumer closed or already polling")
+	}
 	if c.kafkaConsumer == nil {
 		return nil, fmt.Errorf("kafka consumer is not initialized")
+	}
+	c.pollStarted = true
+	if c.franzClient != nil && c.batchDone != nil {
+		return c.pollOwnedBatches(), nil
 	}
 
 	msgChan := make(chan []*Message, 1)
 
 	go func() {
+		defer close(c.pollDone)
 		defer close(msgChan)
 
 		batch := make([]*Message, 0, c.batchMaxMessages)
@@ -333,22 +360,62 @@ func approximateMessageSize(msg *Message) int {
 
 // Close closes the Kafka consumer.
 func (c *Consumer) Close() error {
-	c.cancel()
-	if c.kafkaConsumer == nil {
-		return nil
-	}
-	return c.kafkaConsumer.Close()
+	c.closeOnce.Do(func() {
+		c.stateMu.Lock()
+		c.closed = true
+		c.cancel()
+		started := c.pollStarted
+		c.stateMu.Unlock()
+		if started {
+			<-c.pollDone
+		}
+		if c.franzClient != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			c.franzClient.LeaveGroupContext(ctx)
+			cancel()
+		}
+		if c.kafkaConsumer != nil {
+			c.closeErr = c.kafkaConsumer.Close()
+		}
+	})
+	return c.closeErr
 }
 
 // CompleteBatch releases the polling loop only after every record is resolved
 // and its offset committed. Cancellation leaves the batch available for replay.
 func (c *Consumer) CompleteBatch() {
+	c.finishBatch(true)
+}
+
+// AbortBatch rewinds local fetch positions before releasing ownership for replay.
+func (c *Consumer) AbortBatch() { c.finishBatch(false) }
+
+func (c *Consumer) finishBatch(complete bool) {
 	if c.batchDone != nil {
 		select {
-		case c.batchDone <- struct{}{}:
+		case c.batchDone <- complete:
 		case <-c.ctx.Done():
 		}
 	}
+}
+
+func (c *Consumer) BatchContext() context.Context {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+	if c.batchCtx != nil {
+		return c.batchCtx
+	}
+	return c.ctx
+}
+
+func (c *Consumer) RequestRejoin() {
+	if c.franzClient != nil {
+		c.franzClient.ForceRebalance()
+	}
+}
+
+func IsOwnershipError(err error) bool {
+	return errors.Is(err, kerr.IllegalGeneration) || errors.Is(err, kerr.UnknownMemberID) || errors.Is(err, kerr.RebalanceInProgress) || errors.Is(err, kerr.FencedInstanceID)
 }
 
 // CommitMessage commits the offset of the provided message.
@@ -370,6 +437,7 @@ func (f *franzConsumerAdapter) Poll(ms int) Event {
 	defer cancel()
 
 	fetches := f.client.PollRecords(ctx, 1)
+	logFetchErrors(logger.S(), fetches)
 	if fetches.IsClientClosed() {
 		return errKafkaClientClosed
 	}

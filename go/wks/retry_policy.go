@@ -169,6 +169,11 @@ func (r *RetryPolicy) handleExhaustedRetries(
 
 // sendToDLQ sends a failed message batch to the DLQ topic with retry logic.
 func (r *RetryPolicy) sendToDLQ(ctx context.Context, lambdaReq *model_pb.LambdaRequest, dlqAction *configs_pb.DLQAction, processingErr error) error {
+	return r.executeWithDLQRetry(ctx, func(ctx context.Context) error { return r.sendToDLQOnce(ctx, lambdaReq, dlqAction, processingErr) }, dlqAction)
+}
+
+// sendToDLQOnce has no retry loop: the caller owns the entire retry schedule.
+func (r *RetryPolicy) sendToDLQOnce(ctx context.Context, lambdaReq *model_pb.LambdaRequest, dlqAction *configs_pb.DLQAction, processingErr error) error {
 	if r.dlqProducer == nil {
 		return fmt.Errorf("DLQ producer not initialized")
 	}
@@ -178,6 +183,7 @@ func (r *RetryPolicy) sendToDLQ(ctx context.Context, lambdaReq *model_pb.LambdaR
 	}
 
 	dlqTopic := dlqAction.GetTopic()
+	messages := make([]*kafka.Message, 0, len(lambdaReq.GetMessages()))
 
 	// Convert lambda request messages to DLQ messages
 	for _, msg := range lambdaReq.GetMessages() {
@@ -202,19 +208,12 @@ func (r *RetryPolicy) sendToDLQ(ctx context.Context, lambdaReq *model_pb.LambdaR
 			Value: []byte(processingErr.Error()),
 		})
 
-		// Send with DLQ retry policy
-		sendFunc := func(ctx context.Context) error {
-			return r.dlqProducer.Produce(ctx, dlqMsg)
-		}
-
-		if err := r.executeWithDLQRetry(ctx, sendFunc, dlqAction); err != nil {
-			r.log.Errorf("[%v:%v] failed to send message to DLQ topic %s: %v", r.consumerName, r.jobId, dlqTopic, err)
-			return err
-		}
-
-		r.log.Infof("[%v:%v] successfully sent message to DLQ topic %s", r.consumerName, r.jobId, dlqTopic)
+		messages = append(messages, dlqMsg)
 	}
-
+	if err := r.dlqProducer.ProduceBatch(ctx, messages); err != nil {
+		return err
+	}
+	r.log.Infof("[%v:%v] sent %d messages to DLQ topic %s", r.consumerName, r.jobId, len(messages), dlqTopic)
 	return nil
 }
 

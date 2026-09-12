@@ -49,7 +49,7 @@ var (
 	}
 )
 
-type sendEventFunc func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error)
+type sendEventFunc func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error)
 
 type consumerConfigCtxKey struct{}
 
@@ -88,14 +88,13 @@ type ProcessingJob struct {
 	shutdownOnce sync.Once
 }
 
-func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error) {
 	if len(req.GetMessages()) == 0 {
 		return nil, nil
 	}
 
-	lambda := c.lambdaSelector.Select()
-
 	sendOnce := func(ctx context.Context, batch *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+		lambda := c.lambdaSelector.Select()
 		payload, err := ConvertLambdaRequestToJson(batch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal lambda request: %w", err)
@@ -218,8 +217,6 @@ func (c *ProcessingJob) Execute() {
 		return
 	}
 
-	sendCtx := context.WithValue(c.ctx, consumerConfigCtxKey{}, c.consumerCfg)
-
 	for {
 		var msgs []*kafka.Message
 		var ok bool
@@ -243,6 +240,7 @@ func (c *ProcessingJob) Execute() {
 				c.consumerName, c.jobId, len(msgs), first.Topic, first.Partition, first.Offset, last.Offset)
 		}
 
+		sendCtx := context.WithValue(c.kafkaConsumer.BatchContext(), consumerConfigCtxKey{}, c.consumerCfg)
 		// convert kafka messages to lambda request.
 		lambdaReq := kafkaMsgsToLambdaRequest(msgs)
 		batchBytes := approximateBatchBytes(msgs)
@@ -260,10 +258,13 @@ func (c *ProcessingJob) Execute() {
 			}
 
 			start := time.Now()
-			var lambdaResp *model_pb.LambdaResponse
+			var result *BatchResult
 			err := c.retryUntilResolved(ctx, func() error {
 				var err error
-				lambdaResp, err = c.sendEventFunc(c, ctx, lambdaReq)
+				result, err = c.sendEventFunc(c, ctx, lambdaReq)
+				if err == nil && result == nil {
+					return fmt.Errorf("handler returned no batch result")
+				}
 				return err
 			})
 			dur := time.Since(start)
@@ -278,9 +279,9 @@ func (c *ProcessingJob) Execute() {
 			}
 
 			// process lambda response.
-			if lambdaResp != nil {
+			if len(result.Response.GetMessages()) > 0 {
 				if err := c.retryUntilResolved(ctx, func() error {
-					err := c.outputPolicy.Process(ctx, lambdaReq, lambdaResp)
+					err := c.outputPolicy.Process(ctx, result.Request, result.Response)
 					if err != nil && c.metrics != nil {
 						c.metrics.recordOutputError(ctx, c.consumerName, c.jobId, err)
 					}
@@ -327,7 +328,7 @@ func (c *ProcessingJob) Execute() {
 			}
 
 			if successfulCommits > 0 && batchErr == nil && c.metrics != nil {
-				c.metrics.recordMessagesProcessed(ctx, c.consumerName, c.jobId, len(msgs))
+				c.metrics.recordBatchOutcomes(ctx, c.consumerName, c.jobId, result)
 			}
 
 			if batchErr != nil {
@@ -339,7 +340,11 @@ func (c *ProcessingJob) Execute() {
 			return true
 		}(processCtx, span)
 		if !processed {
-			return
+			if c.ctx.Err() != nil {
+				return
+			}
+			c.kafkaConsumer.AbortBatch()
+			continue
 		}
 		c.kafkaConsumer.CompleteBatch()
 	}
@@ -355,6 +360,12 @@ func (c *ProcessingJob) retryUntilResolved(ctx context.Context, fn func() error)
 		if err := fn(); err == nil {
 			return nil
 		} else {
+			if kafka.IsOwnershipError(err) {
+				if c.kafkaConsumer != nil {
+					c.kafkaConsumer.RequestRejoin()
+				}
+				return err
+			}
 			c.log.Errorf("[%s:%d] holding current batch after failure: %v", c.consumerName, c.jobId, err)
 		}
 		if err := sleepWithContext(ctx, time.Second); err != nil {

@@ -71,13 +71,13 @@ func TestJobHoldsBatchAcrossHandlerOutputAndCommitFailures(t *testing.T) {
 			params.Client = stub
 			return kafka.NewConsumer(ctx, params)
 		},
-		sendEventFunc: func(_ *ProcessingJob, _ context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
+		sendEventFunc: func(_ *ProcessingJob, _ context.Context, req *model_pb.LambdaRequest) (*BatchResult, error) {
 			sends++
 			sent <- req.Messages[0].Offset
 			if sends == 1 {
 				return nil, fmt.Errorf("handler unavailable")
 			}
-			return &model_pb.LambdaResponse{Messages: []*model_pb.ResponseMessage{{Status: model_pb.ResponseStatus_STATUS_SUCCESS, Message: []byte("out")}}}, nil
+			return &BatchResult{Request: req, Response: &model_pb.LambdaResponse{Messages: []*model_pb.ResponseMessage{{Status: model_pb.ResponseStatus_STATUS_SUCCESS, Message: []byte("out")}}}}, nil
 		},
 	}
 	done := make(chan struct{})

@@ -8,15 +8,25 @@ import (
 	model_pb "wolvekafka/proto/model"
 )
 
+// BatchResult explicitly separates successful output from terminal dispositions.
+// Request and Response contain only successes, aligned in original input order.
+type BatchResult struct {
+	Request      *model_pb.LambdaRequest
+	Response     *model_pb.LambdaResponse
+	DeadLettered int
+	Dropped      int
+}
+
 // ExecuteBatch retains successful results and retries only unresolved records.
 // A terminal result is acknowledged only after an explicit drop or durable DLQ
 // write. Without a terminal action, RETRY keeps retrying and FAILED pauses until
-// cancellation (restart or config reload), leaving the input uncommitted.
+// cancellation (rebalance, restart, or config reload), leaving input uncommitted.
 func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequest,
 	fn func(context.Context, *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error),
-) (*model_pb.LambdaResponse, error) {
-	result := &model_pb.LambdaResponse{Messages: make([]*model_pb.ResponseMessage, len(req.GetMessages()))}
-	pending := make([]int, len(result.Messages))
+) (*BatchResult, error) {
+	result := &BatchResult{Request: &model_pb.LambdaRequest{}, Response: &model_pb.LambdaResponse{}}
+	successes := make([]*model_pb.ResponseMessage, len(req.GetMessages()))
+	pending := make([]int, len(successes))
 	for i := range pending {
 		pending[i] = i
 	}
@@ -35,7 +45,7 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 		if err == nil {
 			err = validateBatchResponse(subset, resp)
 		}
-		var retry []int
+		var retry, terminal []int
 		if err != nil {
 			retry = append(retry, pending...)
 		} else {
@@ -43,28 +53,34 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 				i := pending[j]
 				switch msg.GetStatus() {
 				case model_pb.ResponseStatus_STATUS_SUCCESS:
-					result.Messages[i] = msg
+					successes[i] = msg
 				case model_pb.ResponseStatus_STATUS_RETRY:
 					retry = append(retry, i)
 				case model_pb.ResponseStatus_STATUS_FAILED:
-					if err := r.resolveTerminal(ctx, req.Messages[i], fmt.Errorf("handler returned STATUS_FAILED")); err != nil {
-						return nil, err
-					}
-					result.Messages[i] = &model_pb.ResponseMessage{Status: model_pb.ResponseStatus_STATUS_FAILED}
+					terminal = append(terminal, i)
 				}
 			}
 			err = fmt.Errorf("handler requested retry")
 		}
-		if len(retry) == 0 {
-			break
-		}
 		if attempt >= len(schedule) && hasAction {
-			for _, i := range retry {
-				if terminalErr := r.resolveTerminal(ctx, req.Messages[i], err); terminalErr != nil {
-					return nil, terminalErr
-				}
-				result.Messages[i] = &model_pb.ResponseMessage{Status: model_pb.ResponseStatus_STATUS_FAILED}
+			terminal = append(terminal, retry...)
+			retry = nil
+		}
+		if len(terminal) > 0 {
+			failed := &model_pb.LambdaRequest{}
+			for _, i := range terminal {
+				failed.Messages = append(failed.Messages, req.Messages[i])
 			}
+			if terminalErr := r.resolveTerminal(ctx, failed, fmt.Errorf("terminal handler failure or exhausted retries: %w", err)); terminalErr != nil {
+				return nil, terminalErr
+			}
+			if policy.GetDrop() != nil {
+				result.Dropped += len(terminal)
+			} else {
+				result.DeadLettered += len(terminal)
+			}
+		}
+		if len(retry) == 0 {
 			break
 		}
 		delay := defaultRetryMaxBackoff
@@ -81,6 +97,12 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 			return nil, err
 		}
 		pending = retry
+	}
+	for i, msg := range successes {
+		if msg != nil {
+			result.Request.Messages = append(result.Request.Messages, req.Messages[i])
+			result.Response.Messages = append(result.Response.Messages, msg)
+		}
 	}
 	return result, nil
 }
@@ -102,26 +124,35 @@ func validateBatchResponse(req *model_pb.LambdaRequest, resp *model_pb.LambdaRes
 	return nil
 }
 
-func (r *RetryPolicy) resolveTerminal(ctx context.Context, msg *model_pb.KafkaMessage, cause error) error {
+func (r *RetryPolicy) resolveTerminal(ctx context.Context, req *model_pb.LambdaRequest, cause error) error {
 	policy := r.consumerCfg.GetRetryPolicy()
 	if policy.GetDrop() != nil {
 		return nil
 	}
 	if policy.GetDlq() == nil {
-		r.log.Errorf("[%s:%d] terminal handler failure without drop/DLQ policy; holding uncommitted batch until restart or config reload", r.consumerName, r.jobId)
+		r.log.Errorf("[%s:%d] terminal handler failure without drop/DLQ policy; holding uncommitted batch until rebalance, restart, or config reload", r.consumerName, r.jobId)
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	for {
+	schedule := buildBackoffSchedule(policy.GetDlq().GetExponentialBackoff())
+	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := r.sendToDLQ(ctx, &model_pb.LambdaRequest{Messages: []*model_pb.KafkaMessage{msg}}, policy.GetDlq(), cause); err == nil {
+		if err := r.sendToDLQOnce(ctx, req, policy.GetDlq(), cause); err == nil {
 			return nil
 		} else {
 			r.log.Errorf("[%s:%d] retaining input after DLQ failure: %v", r.consumerName, r.jobId, err)
 		}
-		if err := sleepWithContext(ctx, time.Second); err != nil {
+		delay := time.Second
+		if len(schedule) > 0 {
+			index := attempt
+			if index >= len(schedule) {
+				index = len(schedule) - 1
+			}
+			delay = schedule[index]
+		}
+		if err := sleepWithContext(ctx, delay); err != nil {
 			return err
 		}
 	}

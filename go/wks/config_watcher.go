@@ -53,7 +53,7 @@ func (w *WolveKafkaService) WatchConfig(ctx context.Context, path string, interv
 			}
 		}
 		if err != nil {
-			w.log.Errorf("config watcher: keeping active configuration: %v", err)
+			w.log.Errorf("config watcher: configuration not applied; will retry (teardown failures may leave old workers stopped): %v", err)
 		}
 		select {
 		case <-ctx.Done():

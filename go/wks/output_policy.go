@@ -78,11 +78,6 @@ func (o *OutputPolicy) executeKafka(ctx context.Context, req *model_pb.LambdaReq
 	msgs := make([]*kafka.Message, 0, len(resp.GetMessages()))
 
 	for i, resp := range resp.GetMessages() {
-		// FAILED here means ExecuteBatch durably dead-lettered or explicitly
-		// dropped this record. Never publish its response as successful output.
-		if resp.GetStatus() == model_pb.ResponseStatus_STATUS_FAILED {
-			continue
-		}
 		// extracting meta information from request for logging.
 		reqMsg := req.Messages[i]
 		topic := reqMsg.GetTopic()

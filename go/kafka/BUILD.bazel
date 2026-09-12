@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "connection.go",
         "consumer.go",
+        "owned_batches.go",
         "producer.go",
         "types.go",
     ],
@@ -15,6 +16,7 @@ go_library(
         "//go/configs",
         "//proto/configs",
         "@com_github_twmb_franz_go//pkg/kgo",
+        "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/sasl/plain",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@org_uber_go_zap//:zap",
@@ -26,6 +28,7 @@ go_test(
     srcs = [
         "connection_test.go",
         "consumer_test.go",
+        "owned_batches_test.go",
         "producer_test.go",
     ],
     embed = [":kafka"],
@@ -33,6 +36,9 @@ go_test(
         "//proto/configs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kerr",
+        "@org_uber_go_zap//:zap",
+        "@org_uber_go_zap//zaptest/observer",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go//pkg/sasl",
     ],

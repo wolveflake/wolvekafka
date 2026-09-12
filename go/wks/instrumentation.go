@@ -18,17 +18,19 @@ import (
 type instrumentation struct {
 	tracer trace.Tracer
 
-	configApplied       metric.Int64Counter
-	consumersConfigured metric.Int64UpDownCounter
-	jobsInflight        metric.Int64UpDownCounter
-	batchMessages       metric.Int64Histogram
-	batchBytes          metric.Int64Histogram
-	messagesProcessed   metric.Int64Counter
-	lambdaDurationMs    metric.Float64Histogram
-	lambdaFailures      metric.Int64Counter
-	lambdaRetries       metric.Int64Counter
-	kafkaCommitErrors   metric.Int64Counter
-	outputErrors        metric.Int64Counter
+	configApplied        metric.Int64Counter
+	consumersConfigured  metric.Int64UpDownCounter
+	jobsInflight         metric.Int64UpDownCounter
+	batchMessages        metric.Int64Histogram
+	batchBytes           metric.Int64Histogram
+	messagesProcessed    metric.Int64Counter
+	messagesDeadLettered metric.Int64Counter
+	messagesDropped      metric.Int64Counter
+	lambdaDurationMs     metric.Float64Histogram
+	lambdaFailures       metric.Int64Counter
+	lambdaRetries        metric.Int64Counter
+	kafkaCommitErrors    metric.Int64Counter
+	outputErrors         metric.Int64Counter
 }
 
 var (
@@ -40,21 +42,33 @@ func getInstrumentation() *instrumentation {
 	instOnce.Do(func() {
 		meter := otel.Meter("wolvekafka/wks")
 		inst = &instrumentation{
-			tracer:              otel.Tracer("wolvekafka/wks/processor"),
-			configApplied:       buildInt64Counter(meter, "wks.config.applied_total", "Number of configuration refreshes applied at runtime."),
-			consumersConfigured: buildInt64UpDownCounter(meter, "wks.consumers.configured", "Count of active consumer groups managed by the service."),
-			jobsInflight:        buildInt64UpDownCounter(meter, "wks.jobs.inflight", "Number of processing jobs currently running."),
-			batchMessages:       buildInt64Histogram(meter, "wks.kafka.batch.messages", "Number of Kafka records delivered per batch."),
-			batchBytes:          buildInt64Histogram(meter, "wks.kafka.batch.bytes", "Approximate size of Kafka batches in bytes.", metric.WithUnit("By")),
-			messagesProcessed:   buildInt64Counter(meter, "wks.kafka.messages_processed", "Count of Kafka records that were successfully processed and committed."),
-			lambdaDurationMs:    buildFloat64Histogram(meter, "wks.lambda.duration_ms", "End-to-end duration spent invoking downstream lambdas.", metric.WithUnit("ms")),
-			lambdaFailures:      buildInt64Counter(meter, "wks.lambda.failures", "Number of lambda invocations that returned an error."),
-			lambdaRetries:       buildInt64Counter(meter, "wks.lambda.retries", "Number of lambda retry attempts triggered after a failure."),
-			kafkaCommitErrors:   buildInt64Counter(meter, "wks.kafka.commit_errors", "Count of failures while committing Kafka offsets."),
-			outputErrors:        buildInt64Counter(meter, "wks.output.errors", "Number of failures while executing output policies."),
+			tracer:               otel.Tracer("wolvekafka/wks/processor"),
+			configApplied:        buildInt64Counter(meter, "wks.config.applied_total", "Number of configuration refreshes applied at runtime."),
+			consumersConfigured:  buildInt64UpDownCounter(meter, "wks.consumers.configured", "Count of active consumer groups managed by the service."),
+			jobsInflight:         buildInt64UpDownCounter(meter, "wks.jobs.inflight", "Number of processing jobs currently running."),
+			batchMessages:        buildInt64Histogram(meter, "wks.kafka.batch.messages", "Number of Kafka records delivered per batch."),
+			batchBytes:           buildInt64Histogram(meter, "wks.kafka.batch.bytes", "Approximate size of Kafka batches in bytes.", metric.WithUnit("By")),
+			messagesProcessed:    buildInt64Counter(meter, "wks.kafka.messages_processed", "Count of Kafka records that were successfully processed and committed."),
+			messagesDeadLettered: buildInt64Counter(meter, "wks.kafka.messages_dead_lettered", "Count of input records dead-lettered and committed."),
+			messagesDropped:      buildInt64Counter(meter, "wks.kafka.messages_dropped", "Count of input records explicitly dropped and committed."),
+			lambdaDurationMs:     buildFloat64Histogram(meter, "wks.lambda.duration_ms", "End-to-end duration spent invoking downstream lambdas.", metric.WithUnit("ms")),
+			lambdaFailures:       buildInt64Counter(meter, "wks.lambda.failures", "Number of lambda invocations that returned an error."),
+			lambdaRetries:        buildInt64Counter(meter, "wks.lambda.retries", "Number of lambda retry attempts triggered after a failure."),
+			kafkaCommitErrors:    buildInt64Counter(meter, "wks.kafka.commit_errors", "Count of failures while committing Kafka offsets."),
+			outputErrors:         buildInt64Counter(meter, "wks.output.errors", "Number of failures while executing output policies."),
 		}
 	})
 	return inst
+}
+
+func (i *instrumentation) recordBatchOutcomes(ctx context.Context, consumer string, jobID int, result *BatchResult) {
+	if i == nil || result == nil {
+		return
+	}
+	i.recordMessagesProcessed(ctx, consumer, jobID, len(result.Response.GetMessages()))
+	opts := metric.WithAttributes(i.jobAttrs(consumer, jobID)...)
+	i.messagesDeadLettered.Add(ctx, int64(result.DeadLettered), opts)
+	i.messagesDropped.Add(ctx, int64(result.Dropped), opts)
 }
 
 func buildInt64Counter(m metric.Meter, name, desc string, opts ...metric.Int64CounterOption) metric.Int64Counter {

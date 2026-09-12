@@ -43,6 +43,7 @@ go_test(
         "output_policy_test.go",
         "processing_job_test.go",
         "retry_policy_test.go",
+        "review_regression_test.go",
         "service_test.go",
         "types_test.go",
     ],
@@ -54,6 +55,9 @@ go_test(
         "//proto/model",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@com_github_twmb_franz_go//pkg/kerr",
+        "@io_opentelemetry_go_otel_sdk_metric//:metric",
+        "@io_opentelemetry_go_otel_sdk_metric//metricdata",
         "@org_uber_go_zap//:zap",
     ],
 )

@@ -39,8 +39,10 @@ func TestBatchRetriesOnlyUnresolvedMessages(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
-	require.Equal(t, []byte("kept"), resp.Messages[0].Message)
-	require.Equal(t, model_pb.ResponseStatus_STATUS_FAILED, resp.Messages[2].Status)
+	require.Equal(t, []byte("kept"), resp.Response.Messages[0].Message)
+	require.Len(t, resp.Response.Messages, 2)
+	require.Equal(t, 1, resp.Dropped)
+	require.EqualValues(t, 2, resp.Request.Messages[1].Offset)
 }
 
 func TestMalformedResponsesCannotAcknowledgeSuccess(t *testing.T) {
@@ -55,7 +57,8 @@ func TestMalformedResponsesCannotAcknowledgeSuccess(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, 2, calls)
-	require.Equal(t, model_pb.ResponseStatus_STATUS_FAILED, resp.Messages[0].Status)
+	require.Empty(t, resp.Response.Messages)
+	require.Equal(t, 1, resp.Dropped)
 }
 
 func TestFailedWithoutTerminalPolicyRemainsUncommitted(t *testing.T) {
