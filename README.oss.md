@@ -169,4 +169,4 @@ comparison and roadmap. Issues and PRs welcome.
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
-Copyright 2023-2026 wolveflake LLC.
+Copyright 2023-2026 Wolveflake LLC (https://wolveflake.io).
