@@ -1,0 +1,11 @@
+.git
+.github
+.idea
+.cache
+bazel-*
+**/*_test.go
+**/testdata
+docs
+services
+thirdparty
+WKS-Grafana.json

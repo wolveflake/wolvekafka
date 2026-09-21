@@ -1,0 +1,19 @@
+{
+  "cluster": {
+    "bootstrap_servers": ["kafka:9092"]
+  },
+  "consumers": [
+    {
+      "group_id": "wolvekafka-quickstart",
+      "topics": ["demo-topic"],
+      "lambdas": [
+        {
+          "url": "http://handler:8081/"
+        }
+      ],
+      "parallel": {
+        "parallelism": 1
+      }
+    }
+  ]
+}
