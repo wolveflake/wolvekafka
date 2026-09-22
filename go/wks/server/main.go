@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"time"
 
 	"wolvekafka/go/common/logger"
@@ -14,12 +15,19 @@ import (
 )
 
 var (
-	serviceID  = flag.String("service_id", "wolvekafka", "Unique service identifier used for registration and logs.")
-	configPath = flag.String("config_path", "/etc/wks/config/config.json", "Path to the JSON configuration consumed by the WKS service.")
+	serviceID   = flag.String("service_id", "wolvekafka", "Unique service identifier used for registration and logs.")
+	configPath  = flag.String("config_path", "/etc/wks/config/config.json", "Path to the JSON configuration consumed by the WKS service.")
+	showVersion = flag.Bool("version", false, "Print the WKS version and source revision, then exit.")
+	version     = "dev"
+	commit      = "unknown"
 )
 
 func main() {
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("wks %s (%s)\n", version, commit)
+		return
+	}
 
 	cfg, err := wks.LoadConfigFromFile(*configPath)
 	if err != nil {

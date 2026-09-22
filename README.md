@@ -185,9 +185,10 @@ Useful endpoints default to:
 - `:8090` — gRPC health service.
 
 The repository also contains a [Kubernetes Helm chart](services/wks/README.md)
-and a ready-to-import [Grafana dashboard](WKS-Grafana.json). Public versioned
-images and chart releases are not published yet; until they are, build the
-image from source as the quickstart does.
+and a ready-to-import [Grafana dashboard](WKS-Grafana.json). The
+[release process](docs/releases.md) produces versioned Linux AMD64/ARM64
+binaries, GHCR images, and an OCI chart. The quickstart builds from source and
+does not require any published artifact.
 
 ## Delivery guarantees
 

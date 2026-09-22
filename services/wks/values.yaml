@@ -3,11 +3,11 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: registry.digitalocean.com/wolveflake/wks
-  tag: latest
+  repository: ghcr.io/dguptawolveflake/wolvekafka
+  # Empty uses the chart's appVersion, which is set from the release tag.
+  tag: ""
   pullPolicy: IfNotPresent
-  pullSecrets:
-    - name: demo-regcred
+  pullSecrets: []
 
 serviceAccount:
   create: true

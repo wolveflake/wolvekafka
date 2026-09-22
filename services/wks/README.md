@@ -1,82 +1,34 @@
-# WKS Server Helm Chart
+# WolveKafka Helm chart
 
-This chart deploys the `go/wks/server` binary (packaged into the OCI image built via Bazel) to a DigitalOcean Kubernetes cluster.
+The chart deploys WKS to Kubernetes. It defaults to the versioned GHCR image
+matching the chart's `appVersion`; it does not require a private registry or
+image-pull secret once the package is public.
 
-## Prerequisites
+After a version is published, install its matching OCI chart:
 
-- The container image `ghcr.io/wolveflake/wks:<tag>` is available and the cluster can pull from the registry (create an image pull secret if needed).
-- `helm` 3.10+ installed locally.
-- Access to the desired DigitalOcean Kubernetes context (`kubectl config use-context <do-cluster>`).
-
-## Configuration
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `replicaCount` | Number of pods (ignored when autoscaling enabled) | `1` |
-| `image.repository` | OCI repository for the server image | `ghcr.io/wolveflake/wks` |
-| `image.tag` | Image tag | `latest` |
-| `image.pullSecrets` | List of image pull secrets | `[demo-regcred]` |
-| `service.type` | Kubernetes service type | `ClusterIP` |
-| `service.port` | Service port | `8080` |
-| `ingress.enabled` | Enable ingress | `false` |
-| `autoscaling.enabled` | Enable HPA | `false` |
-| `resources` | Pod resource requests/limits | See `values.yaml` |
-| `env` | Additional environment variables passed to the container | `[LOG_LEVEL, PORT]` |
-| `config.*` | JSON config (mounted as `/etc/wks/config/config.json`) that bootstraps WKS | See `values.yaml` |
-
-By default the chart materializes the sample config defined in `values.yaml` into a ConfigMap and mounts it at `/etc/wks/config/config.json`. Update `config.data` (and optionally `config.path`, `config.fileName`, or `config.mountPath`) to point WKS at your own consumer definitions.
-
-Refer to `values.yaml` for the full list of configurable settings (ingress, probes, PDB, volume mounts, etc.).
-
-## End-to-End Deployment Flow
-
-1. **Prepare GHCR Docker config** (rerun when the PAT changes):
-   ```bash
-   DOCKER_GHCR_CONFIG=${DOCKER_GHCR_CONFIG:-/tmp/docker-ghcr}
-   ./services/wks/setup-ghcr-config.sh <ghcr-personal-access-token> <github-username>
-   export DOCKER_CONFIG=$DOCKER_GHCR_CONFIG
-   ```
-
-2. **Build & push the image** (publishes `ghcr.io/wolveflake/wks:<tag>`):
-   ```bash
-   bazel run //go/wks/server:image_push_ghcr -- --tag <tag>
-   ```
-
-3. **Create / update the cluster pull secret** in each namespace (delete first if it exists):
-   ```bash
-   kubectl delete secret demo-regcred -n wks-demo --ignore-not-found
-   kubectl create secret docker-registry demo-regcred \
-     --namespace wks-demo \
-     --docker-server=ghcr.io \
-     --docker-username=<github-username> \
-     --docker-password=<ghcr-personal-access-token>
-   ```
-
-4. **Install / upgrade (or uninstall) the Helm release**:
-   ```bash
-   helm upgrade --install demo-wks ./services/wks \
-     --namespace wks-demo --create-namespace \
-     --set image.tag=<tag> \
-     --set image.pullPolicy=Always
-
-   # Uninstall
-   helm uninstall demo-wks --namespace wks-demo
-   ```
-
-5. **Monitor the rollout / access the service**:
-   ```bash
-   kubectl -n wks-demo get pods -w
-   kubectl -n wks-demo logs deploy/demo-wks-wks
-
-   POD=$(kubectl -n wks-demo get pods -l app.kubernetes.io/name=wks -o jsonpath='{.items[0].metadata.name}')
-   kubectl -n wks-demo port-forward "$POD" 8080:8080
-   # Visit http://127.0.0.1:8080/health
-   ```
-
-## Local Development
-
-Use `helm template` to preview manifests:
-
-```bash
-helm template wks ./services/wks --set replicaCount=2
+```sh
+helm install wks oci://ghcr.io/dguptawolveflake/charts/wks \
+  --version 0.1.0 \
+  --namespace wks --create-namespace \
+  --set-file config.data=config.json
 ```
+
+`config.json` must use Kafka bootstrap and handler addresses reachable from the
+cluster. Start with the [configuration example](../../README.md#configuration)
+and [delivery/security reference](../../docs/delivery-and-security.md). Do not
+store Kafka credentials in a ConfigMap; mount a Kubernetes Secret and set
+`config.enabled=false`, `config.path`, and `extraVolumes`/`extraVolumeMounts`
+instead.
+
+Inspect the chart before applying it:
+
+```sh
+helm show chart oci://ghcr.io/dguptawolveflake/charts/wks --version 0.1.0
+helm template wks ./services/wks --set-file config.data=config.json
+```
+
+The chart exposes HTTP health and Prometheus metrics on port 8080. The image
+repository can be overridden with `image.repository`; `image.tag` defaults to
+the chart release's `appVersion`. Set `image.pullSecrets` only for a private
+registry. See [`values.yaml`](values.yaml) for replicas, resource limits,
+ingress, autoscaling, volume mounts, and other options.

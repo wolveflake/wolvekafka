@@ -31,12 +31,10 @@ spec:
       {{- end }}
       containers:
         - name: {{ include "wks.name" . }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          {{- if .Values.config.enabled }}
           args:
             - --config_path={{ .Values.config.path }}
-          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
@@ -51,11 +49,11 @@ spec:
           {{- end }}
           {{- if and .Values.livenessProbe .Values.livenessProbe.enabled }}
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
+            {{- omit .Values.livenessProbe "enabled" | toYaml | nindent 12 }}
           {{- end }}
           {{- if and .Values.readinessProbe .Values.readinessProbe.enabled }}
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
+            {{- omit .Values.readinessProbe "enabled" | toYaml | nindent 12 }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
