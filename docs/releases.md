@@ -55,9 +55,14 @@ same Dockerfile locally and does not depend on registry availability.
 
 ## Maintainer release procedure
 
-1. Merge the release changes to `main` and ensure CI passes.
-2. Create a SemVer tag pointing at a commit on `main`, then publish its GitHub
-   release. The publication workflow runs on the published release event.
+1. On a release-preparation branch, run
+   `go run scripts/release/chart-version.go vX.Y.Z` with the intended tag.
+   Commit the updated `services/wks/Chart.yaml` with the other release changes,
+   let CI pass, and merge to `main`. The release workflow rejects tags that do
+   not match the committed chart version and `appVersion`.
+2. Create a SemVer tag pointing at that commit on `main`, then publish its
+   GitHub release. The publication workflow runs on the published release
+   event.
 3. Wait for `Publish release artifacts` to finish. Verify the release assets,
    multi-platform image, and matching chart before announcing the release.
 4. Make the GHCR image and chart packages public if GitHub created them as
@@ -78,5 +83,5 @@ scripts/release/build-binaries.sh v0.1.0 "$(git rev-parse HEAD)" dist
 
 The script refuses to overwrite existing archives. Use an empty output
 directory when repeating a build. The release requires Docker Buildx, Go
-1.25.1, and Helm 3.19.0. `helm package services/wks --version 0.1.0
---app-version v0.1.0 --destination dist` produces the matching chart.
+1.25.1, and Helm 3.19.0. After updating and committing chart metadata,
+`helm package services/wks --destination dist` produces the matching chart.

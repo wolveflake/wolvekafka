@@ -67,3 +67,22 @@ func TestWriteArchiveDeterministic(t *testing.T) {
 		t.Fatalf("expected end of archive, got %v", err)
 	}
 }
+
+func TestWriteArchiveRemovesPartialOutput(t *testing.T) {
+	dir := t.TempDir()
+	output := filepath.Join(dir, "release.tar.gz")
+	missing := filepath.Join(dir, "missing")
+	if err := writeArchive(output, 1735689600, []entry{{name: "wks", path: missing, mode: 0o755}}); err == nil {
+		t.Fatal("expected missing input error")
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Fatalf("partial archive remains: %v", err)
+	}
+	valid := filepath.Join(dir, "wks")
+	if err := os.WriteFile(valid, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArchive(output, 1735689600, []entry{{name: "wks", path: valid, mode: 0o755}}); err != nil {
+		t.Fatalf("retry after failure: %v", err)
+	}
+}

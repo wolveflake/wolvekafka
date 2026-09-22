@@ -17,7 +17,8 @@ ADD https://github.com/protocolbuffers/protobuf/releases/download/v33.0/protoc-3
 COPY scripts/release/extract-protoc.go /tmp/extract-protoc.go
 RUN echo 'd99c011b799e9e412064244f0be417e5d76c9b6ace13a2ac735330fa7d57ad8f  /tmp/protoc-amd64.zip' | sha256sum -c - \
     && echo '4b96bc91f8b54d829b8c3ca2207ff1ceb774843321e4fa5a68502faece584272  /tmp/protoc-arm64.zip' | sha256sum -c - \
-    && go run /tmp/extract-protoc.go "/tmp/protoc-${BUILDARCH}.zip" /usr/local/bin/protoc \
+    && go run /tmp/extract-protoc.go "/tmp/protoc-${BUILDARCH}.zip" /usr/local \
+    && test -f /usr/local/include/google/protobuf/any.proto \
     && rm /tmp/protoc-*.zip \
     && go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
 

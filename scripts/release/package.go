@@ -51,6 +51,9 @@ func writeArchive(path string, epoch int64, entries []entry) (err error) {
 		if closeErr := out.Close(); err == nil {
 			err = closeErr
 		}
+		if err != nil {
+			_ = os.Remove(path)
+		}
 	}()
 	gz := gzip.NewWriter(out)
 	gz.Header.ModTime = time.Unix(epoch, 0).UTC()

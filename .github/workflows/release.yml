@@ -12,6 +12,7 @@ permissions:
   packages: write
   id-token: write
   attestations: write
+  artifact-metadata: write
 
 concurrency:
   group: release-${{ github.event.release.tag_name }}
@@ -62,10 +63,13 @@ jobs:
           version: v3.19.0
 
       - name: Test release packaging and chart
+        env:
+          TAG: ${{ steps.source.outputs.tag }}
         run: |
           go test ./scripts/release
           helm lint services/wks
           bash -n scripts/release/build-binaries.sh
+          go run scripts/release/chart-version.go -check "$TAG"
 
       - name: Prepare release output
         run: mkdir -p dist
@@ -82,16 +86,14 @@ jobs:
       - name: Build Linux binaries and chart
         env:
           TAG: ${{ steps.source.outputs.tag }}
-          VERSION: ${{ steps.source.outputs.version }}
         run: |
           scripts/release/build-binaries.sh "$TAG" "$GITHUB_SHA" dist
-          helm package services/wks \
-            --version "$VERSION" --app-version "$TAG" --destination dist
+          helm package services/wks --destination dist
 
       - name: Write SHA-256 checksums
         run: |
           cd dist
-          sha256sum -- *.tar.gz *.spdx.json > SHA256SUMS
+          sha256sum -- *.tar.gz *.tgz *.spdx.json > SHA256SUMS
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.5.0
@@ -140,6 +142,8 @@ jobs:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.image.outputs.digest }}
           push-to-registry: true
+          # Storage records are available only to organization-owned repos.
+          create-storage-record: ${{ github.event.repository.owner.type == 'Organization' }}
 
       - name: Upload release files
         env:
