@@ -1,11 +1,10 @@
 apiVersion: v2
 name: wks
-description: Helm chart for deploying the WKS server on DigitalOcean Kubernetes.
+description: WolveKafka HTTP-to-Kafka consumer runtime
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "v0.1.0"
 sources:
-  - https://github.com/avyandeepak/wolvekafka/tree/main/go/wks/server
+  - https://github.com/dguptawolveflake/wolvekafka
 maintainers:
-  - name: Wolvekafka Team
-    email: dev@wolvekafka.local
+  - name: Wolveflake LLC
