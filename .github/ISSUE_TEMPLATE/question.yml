@@ -1,0 +1,22 @@
+name: Usage question
+description: Ask for help using or configuring WKS (not a security report).
+title: "[Question] "
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Check SUPPORT.md and existing issues first. Remove credentials and
+        private data from any configuration or logs you share.
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Include WKS version, relevant sanitized config, and error messages.
+    validations:
+      required: true
