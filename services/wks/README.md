@@ -6,6 +6,8 @@ image-pull secret once the package is public.
 
 After a version is published, install its matching OCI chart:
 
+Replace `0.1.0` below with the published chart version you want to install.
+
 ```sh
 helm install wks oci://ghcr.io/dguptawolveflake/charts/wks \
   --version 0.1.0 \

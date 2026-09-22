@@ -2,6 +2,7 @@
 .github
 .idea
 .cache
+dist/
 bazel-*
 **/*_test.go
 **/testdata

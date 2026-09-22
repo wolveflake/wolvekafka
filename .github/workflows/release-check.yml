@@ -39,9 +39,14 @@ jobs:
         run: |
           go test ./scripts/release
           helm lint services/wks
+          go run scripts/release/chart-version.go -check
           scripts/release/build-binaries.sh v0.0.0-test "$GITHUB_SHA" dist
           helm package services/wks \
             --version 0.0.0 --app-version v0.0.0-test --destination dist
           test -f dist/wks_v0.0.0-test_linux_amd64.tar.gz
           test -f dist/wks_v0.0.0-test_linux_arm64.tar.gz
           test -f dist/wks-0.0.0.tgz
+          cd dist
+          sha256sum -- *.tar.gz *.tgz > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          grep -Fq 'wks-0.0.0.tgz' SHA256SUMS

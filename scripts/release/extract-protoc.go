@@ -3,8 +3,8 @@
 
 //go:build ignore
 
-// extract-protoc.go extracts only the protoc executable from the verified
-// upstream zip, without installing distribution packages during the build.
+// extract-protoc.go extracts protoc and its standard proto includes from the
+// verified upstream zip, without installing distribution packages.
 package main
 
 import (
@@ -12,11 +12,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
+	"path/filepath"
+	"strings"
 )
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: go run extract-protoc.go PROTOC_ZIP OUTPUT")
+		fmt.Fprintln(os.Stderr, "usage: go run extract-protoc.go PROTOC_ZIP PREFIX")
 		os.Exit(2)
 	}
 	if err := extractProtoc(os.Args[1], os.Args[2]); err != nil {
@@ -25,21 +28,40 @@ func main() {
 	}
 }
 
-func extractProtoc(archivePath, outputPath string) error {
+func extractProtoc(archivePath, prefix string) error {
 	archive, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
 	}
 	defer archive.Close()
+	foundBinary := false
+	foundIncludes := false
 	for _, file := range archive.File {
-		if file.Name != "bin/protoc" {
+		if file.Name != "bin/protoc" && !strings.HasPrefix(file.Name, "include/google/protobuf/") {
 			continue
+		}
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		if path.Clean(file.Name) != file.Name {
+			return fmt.Errorf("unsafe archive path %q", file.Name)
+		}
+		outputPath := filepath.Join(prefix, filepath.FromSlash(file.Name))
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+			return err
 		}
 		input, err := file.Open()
 		if err != nil {
 			return err
 		}
-		output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o755)
+		mode := os.FileMode(0o644)
+		if file.Name == "bin/protoc" {
+			mode = 0o755
+			foundBinary = true
+		} else {
+			foundIncludes = true
+		}
+		output, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 		if err != nil {
 			input.Close()
 			return err
@@ -53,7 +75,12 @@ func extractProtoc(archivePath, outputPath string) error {
 		if inputErr != nil {
 			return inputErr
 		}
-		return outputErr
+		if outputErr != nil {
+			return outputErr
+		}
 	}
-	return fmt.Errorf("bin/protoc not found in %s", archivePath)
+	if !foundBinary || !foundIncludes {
+		return fmt.Errorf("protoc binary or standard includes missing from %s", archivePath)
+	}
+	return nil
 }
