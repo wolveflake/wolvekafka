@@ -1,5 +1,8 @@
 # WolveKafka (WKS)
 
+[![CI](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml)
+[![Release checks](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml)
+
 **Turn any HTTP service into a reliable Kafka consumer.** WolveKafka runs the
 consumer group and provides retries, dead-letter queues, batching, weighted
 routing, hot reload, and observability. Your application only implements an
@@ -219,9 +222,10 @@ Feedback and production experience reports are especially valuable.
 
 ## Contributing and support
 
-Issues and pull requests are welcome. Contributor guidelines, security
-reporting instructions, public releases, and a support policy are still being
-prepared before the repository is made public.
+Issues and pull requests are welcome. See the [CI checks and merge
+policy](docs/ci.md). Contributor guidelines, security reporting instructions,
+public releases, and a support policy are still being prepared before the
+repository is made public.
 
 ## License
 
