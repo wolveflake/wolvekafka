@@ -1,0 +1,77 @@
+# Copyright 2023-2026 Wolveflake LLC
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    name: Unit and race tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.27.0
+          repository-cache: true
+          disk-cache: ci-unit
+          cache-save: ${{ github.event_name != 'pull_request' }}
+
+      - name: Run unit tests with race detection
+        run: |
+          bazel test \
+            //go/common/server:server_test \
+            //go/configs:configs_test \
+            //go/kafka:kafka_test \
+            //go/wks:wks_test \
+            --@rules_go//go/config:race \
+            --test_output=errors
+
+  integration:
+    name: Kafka integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-version: 1.27.0
+          repository-cache: true
+          disk-cache: ci-integration
+          cache-save: ${{ github.event_name != 'pull_request' }}
+
+      - name: Prepare Kafka image
+        run: |
+          docker info
+          docker pull apache/kafka:4.1.0
+
+      - name: Run real-Kafka integration tests
+        run: |
+          bazel test //go/itest/wks_e2e:wks_e2e_test \
+            --test_strategy=standalone \
+            --test_env=WKS_TEST_KAFKA_IMAGE=apache/kafka:4.1.0 \
+            --local_test_jobs=1 \
+            --test_output=errors
