@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an improvement within WKS's Kafka-to-HTTP scope.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: >
+        Please search existing issues and read ROADMAP.md and the README's
+        "When not to use WKS" section before proposing a feature.
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case
+      description: What are you trying to accomplish, and who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: current_workaround
+    attributes:
+      label: Current approach and gap
+      description: Explain what you do today and why it is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include possible compatibility or delivery-semantics effects.
+    validations:
+      required: true

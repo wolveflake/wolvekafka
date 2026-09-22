@@ -222,10 +222,13 @@ Feedback and production experience reports are especially valuable.
 
 ## Contributing and support
 
-Issues and pull requests are welcome. See the [CI checks and merge
-policy](docs/ci.md). Contributor guidelines, security reporting instructions,
-public releases, and a support policy are still being prepared before the
-repository is made public.
+Issues and pull requests are welcome. Start with the [contributor
+guide](CONTRIBUTING.md), [support policy](SUPPORT.md), and
+[roadmap](ROADMAP.md). Please use the [private security reporting
+instructions](SECURITY.md) for vulnerabilities and follow the
+[code of conduct](CODE_OF_CONDUCT.md). CI checks and current merge-policy
+limits are documented [here](docs/ci.md). The repository is still private;
+public release timing has not been announced.
 
 ## License
 
