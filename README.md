@@ -1,23 +1,26 @@
+<div align="center">
+
 # WolveKafka (WKS)
+
+**Turn any HTTP service into a production Kafka consumer.**
+
+No consumer code. No JVM. No Connect cluster.
 
 [![CI](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml)
 [![Release checks](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](go.mod)
 
-**Turn any HTTP service into a production Kafka consumer.** WolveKafka runs the
-consumer group and provides retries, dead-letter queues, batching, weighted
-routing, hot reload, and observability. Your application implements one HTTP
-handler, in any language.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wks-flow-dark.svg">
+  <img alt="A Kafka topic feeds WKS, which POSTs batches to your HTTP handler and routes the returned status to an optional Kafka output topic or a DLQ topic." src="docs/assets/wks-flow-light.svg" width="900">
+</picture>
 
-No consumer code. No JVM. No Connect cluster.
+</div>
 
-```text
-Kafka topic ──▶ WKS ──▶ POST to your handler ──▶ SUCCESS | RETRY | FAILED
-                 │                                          │
-                 │◀──────── retry with backoff ─────────────┘
-                 └──▶ optional Kafka output topic, or DLQ on failure
-```
+WolveKafka runs the consumer group and provides retries, dead-letter queues,
+batching, weighted routing, hot reload, and observability. Your application
+implements one HTTP handler, in any language.
 
 WKS is deliberately narrow: use it when your business logic already is—or
 should be—an independently deployed HTTP service, but you do not want every
@@ -148,6 +151,21 @@ Return exactly one result for every input message, in the same order:
 Always return an explicit status. An omitted status is protobuf enum value zero,
 which means retry—not success. See [delivery, retry, and migration semantics](docs/delivery-and-security.md)
 before using WKS with production traffic.
+
+Stripped of HTTP boilerplate, that is the whole of a handler:
+
+```python
+request = json.loads(body)
+results = []
+
+for message in request["messages"]:
+    process(base64.b64decode(message["value"]))  # your logic
+    results.append({"status": 2})                # 2 = SUCCESS
+
+return json.dumps({"messages": results})
+```
+
+The runnable version is [`examples/quickstart/handler.py`](examples/quickstart/handler.py).
 
 ## Configuration
 
