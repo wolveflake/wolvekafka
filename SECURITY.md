@@ -18,7 +18,7 @@ for available updates.
 Do not post exploit details, credentials, or affected customer data in a
 public issue or pull request.
 
-Email [13@wolveflake.io](mailto:13@wolveflake.io) with the subject
+Email [contacts@wolveflake.io](mailto:contacts@wolveflake.io) with the subject
 **WolveKafka security report**. This is the project's current private
 reporting contact. If the repository's [Security advisories](https://github.com/dguptawolveflake/wolvekafka/security/advisories)
 page offers **Report a vulnerability**, that private form is also suitable.
