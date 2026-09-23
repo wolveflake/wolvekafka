@@ -1,0 +1,29 @@
+<!-- Copyright 2023-2026 Wolveflake LLC -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360" width="960" height="360" role="img" aria-label="WolveKafka data flow">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#6e7681"/></marker></defs>
+<rect x="20" y="132" width="152" height="64" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<rect x="250" y="96" width="206" height="136" rx="10" fill="#121d2f" stroke="#316dca" stroke-width="1.5"/>
+<rect x="690" y="132" width="250" height="64" rx="10" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<rect x="174" y="286" width="176" height="52" rx="8" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<rect x="400" y="286" width="176" height="52" rx="8" fill="#151b23" stroke="#3d444d" stroke-width="1.5"/>
+<text x="96" y="170" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="500" fill="#e6edf3" text-anchor="middle">Kafka topic</text>
+<text x="353" y="131" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="700" fill="#74b9ff" text-anchor="middle" letter-spacing="0.5">WKS</text>
+<text x="353" y="157" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="middle">consumer group</text>
+<text x="353" y="176" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="middle">batch or parallel</text>
+<text x="353" y="195" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="middle">retry and backoff</text>
+<text x="353" y="214" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="400" fill="#9198a1" text-anchor="middle">commit after resolve</text>
+<text x="815" y="158" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#e6edf3" text-anchor="middle">Your handler</text>
+<text x="815" y="178" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11.5" font-weight="400" fill="#9198a1" text-anchor="middle">any language</text>
+<text x="262" y="318" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#e6edf3" text-anchor="middle">Kafka output topic</text>
+<text x="488" y="318" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="500" fill="#e6edf3" text-anchor="middle">DLQ topic</text>
+<path d="M172,164 H238" stroke="#6e7681" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+<path d="M456,148 H678" stroke="#6e7681" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+<path d="M684,184 H462" stroke="#6e7681" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+<path d="M353,232 V262 H262 V278" stroke="#6e7681" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+<path d="M353,232 V262 H488 V278" stroke="#6e7681" stroke-width="1.6" fill="none" marker-end="url(#a)"/>
+<text x="570" y="138" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="12" font-weight="500" fill="#9198a1" text-anchor="middle">HTTP POST</text>
+<text x="570" y="203" font-family="ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,monospace" font-size="11" font-weight="500" fill="#9198a1" text-anchor="middle">SUCCESS &#183; RETRY &#183; FAILED</text>
+<text x="250" y="277" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="end">on success</text>
+<text x="476" y="277" font-family="ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif" font-size="11" font-weight="400" fill="#9198a1" text-anchor="end">on failure</text>
+</svg>
