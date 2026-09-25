@@ -5,3 +5,4 @@ bazel-out
 bazel-testlogs
 bazel-wolvekafka
 bazel-workspace
+examples/quickstart/.runtime/

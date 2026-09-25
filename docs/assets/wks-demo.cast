@@ -1,0 +1,6 @@
+{"version": 2, "width": 110, "height": 18, "timestamp": 1790341277, "title": "WKS: process an order and recover from a retry"}
+[0.0, "o", "$ ./demo send '{\"order_id\":\"123\",\"event\":\"order.created\"}'\r\n"]
+[1.459, "o", "[handler A] demo-1790341274-14204-27706 orders[0]@6 SUCCESS: {\"order_id\":\"123\",\"event\":\"order.created\"}\r\n"]
+[1.459, "o", "$ ./demo retry\r\n"]
+[3.883, "o", "[handler A] demo-1790341275-14236-10384 orders[0]@7 RETRY: {\"order_id\":\"123\",\"event\":\"order.created\",\"demo\":\"retry_once\"}\r\n"]
+[3.884, "o", "[handler A] demo-1790341275-14236-10384 orders[0]@7 SUCCESS: {\"order_id\":\"123\",\"event\":\"order.created\",\"demo\":\"retry_once\"}\r\n"]

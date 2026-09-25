@@ -1,315 +1,201 @@
 <div align="center">
 
-# WolveKafka (WKS)
+# WolveKafka
 
-**Turn any HTTP service into a production Kafka consumer.**
+**Consume Kafka with an HTTP handler.**
 
-No consumer code. No JVM. No Connect cluster.
+Write your business logic in any language. WKS handles consumer groups,
+batching, retries, and dead-letter queues.
+
+[Quickstart](#quickstart) · [Write a handler](#make-it-yours) · [Examples](#try-the-interesting-parts) · [Deploy](#deploy)
 
 [![CI](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml)
-[![Release checks](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/release-check.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Go 1.25](https://img.shields.io/badge/go-1.25-00ADD8.svg)](go.mod)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wks-flow-dark.svg">
-  <img alt="A Kafka topic feeds WKS, which POSTs batches to your HTTP handler and routes the returned status to an optional Kafka output topic or a DLQ topic." src="docs/assets/wks-flow-light.svg" width="900">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wks-hero-dark.svg">
+  <img alt="Kafka events flow through WKS to your HTTP service, in any language." src="docs/assets/wks-hero-light.svg" width="900">
 </picture>
 
 </div>
 
-WolveKafka runs the consumer group and provides retries, dead-letter queues,
-batching, weighted routing, hot reload, and observability. Your application
-implements one HTTP handler, in any language.
+Your service receives a batch over HTTP and returns a result for each record.
+WKS handles what happens next: commit, retry, or send to a dead-letter topic.
+No Kafka client in your application. No JVM or Connect cluster for WKS.
 
-WKS is deliberately narrow: use it when your business logic already is—or
-should be—an independently deployed HTTP service, but you do not want every
-service to implement Kafka consumer plumbing.
+## Quickstart
 
-## Why WKS?
-
-| Without WKS | With WKS |
-| --- | --- |
-| Kafka client and offset logic in every service | A plain HTTP `POST` handler |
-| Custom retry and dead-letter code | Declarative retry and DLQ policies |
-| Consumer implementation tied to a client language | Handlers in Python, Node, Go, Rust, or anything with HTTP |
-| Redeploy to change consumers | Hot-reload a JSON configuration file |
-| Assemble metrics and dashboards yourself | OpenTelemetry metrics and a Grafana dashboard |
-
-## What you get
-
-- **A handler in any language.** The contract is one HTTP `POST`. If it speaks
-  HTTP, it can consume Kafka.
-- **Declarative reliability.** Exponential-backoff retry and a DLQ topic or
-  explicit drop, configured per consumer in JSON.
-- **Weighted multi-target routing.** Spread a topic across handler replicas; a
-  retry re-selects a target, so one unhealthy peer cannot pin a batch.
-- **Batch or parallel execution.** Ordered batches bounded by messages, bytes,
-  and wait time, or N workers when throughput matters more than order.
-- **Hot reload.** Edit the config file or ConfigMap and consumers are added,
-  changed, or removed without restarting the process.
-- **Secured Kafka.** SASL/PLAIN, SCRAM-SHA-256/512, TLS, and mTLS on consumers,
-  output producers, and DLQ producers.
-- **Observability on the first run.** OpenTelemetry metrics, a Prometheus
-  endpoint, and an importable Grafana dashboard.
-- **Ordinary deployment artifacts.** A single binary for Linux
-  AMD64/ARM64, a distroless container image, and a Helm chart.
-
-## Five-minute quickstart
-
-Prerequisites: Docker with Compose v2 and `curl`. The checked-in quickstart
-uses version-pinned Kafka and Python images and builds WKS from this checkout;
-it does not depend on an unpublished binary or private registry.
-
-Start Kafka, create `demo-topic`, launch the example handler, and run WKS:
+You need **Git, Docker with Compose v2, Bash, and curl**. On Windows, use WSL2.
+The first run downloads images and builds WKS from source; startup time depends
+on your connection and Docker resources.
 
 ```bash
 git clone https://github.com/dguptawolveflake/wolvekafka.git
 cd wolvekafka
-docker compose -f examples/quickstart/compose.yaml up --build -d
-
-# Wait for the WKS HTTP endpoint. It prints OK when ready.
-until curl -fsS http://127.0.0.1:8080/health; do sleep 1; done
+./demo start
+./demo send '{"order_id":"123","event":"order.created"}'
 ```
 
-Produce one message:
-
-```bash
-printf '{"hello":"kafka"}\n' | docker compose \
-  -f examples/quickstart/compose.yaml exec -T kafka \
-  /opt/kafka/bin/kafka-console-producer.sh \
-  --bootstrap-server kafka:9092 --topic demo-topic
-```
-
-Inspect the handler log:
-
-```bash
-docker compose -f examples/quickstart/compose.yaml logs handler
-```
-
-You should see output like:
+The demo starts Kafka, WKS, and two small Python handlers. It waits for health,
+sends a readiness event through Kafka, then prints the handler result.
+Your order produces a line like this (IDs and offsets vary):
 
 ```text
-[handler] got demo-topic[0]@0: {"hello":"kafka"}
+[handler A] demo-… orders[0]@1 SUCCESS: {"order_id":"123","event":"order.created"}
 ```
 
-WKS committed the input offset only after the handler returned
-`{"messages":[{"status":2}]}`. Its Prometheus metrics are available at
-<http://127.0.0.1:8080/metrics>:
+**You just processed a Kafka event with a Python HTTP handler.**
+Next, change its business logic or try a failure below.
 
-```bash
-curl -fsS http://127.0.0.1:8080/metrics | grep '^wks_'
-```
+<details>
+<summary>Startup trouble, logs, and cleanup</summary>
 
-Point Grafana at that endpoint and import [`WKS-Grafana.json`](WKS-Grafana.json)
-to get throughput, batch size, handler latency, retry, and failure panels
-without building a dashboard yourself.
+Run `./demo logs` to follow WKS and handler output. Startup failures print
+container diagnostics; health and delivery checks have bounded waits.
+Make sure ports 8080 and 8090 are free and Docker is running. With
+`--observe`, ports 3000 and 9090 must also be free.
 
-Stop the quickstart and remove its local volumes:
+`./demo stop` removes the demo containers but retains Kafka data and runtime
+configuration. `./demo reset --yes` also deletes this demo's Kafka volume and
+runtime configuration. The next start uses the checked-in defaults.
 
-```bash
-docker compose -f examples/quickstart/compose.yaml down -v
-```
+See the [full demo guide](examples/quickstart/README.md) for direct Compose
+commands and troubleshooting.
 
-The complete example lives in [`examples/quickstart`](examples/quickstart).
-Edit its [`config.json`](examples/quickstart/config.json) to try batching,
-retries, a DLQ, multiple handler targets, or Kafka output.
+</details>
 
-## Handler contract
+## Make it yours
 
-WKS sends a batch as protobuf JSON. Kafka byte fields such as `key`, `value`,
-and header values are base64 encoded:
-
-```json
-{
-  "messages": [
-    {
-      "topic": "demo-topic",
-      "partition": 0,
-      "offset": "0",
-      "headers": [],
-      "key": "",
-      "value": "eyJoZWxsbyI6ImthZmthIn0K",
-      "encoding": 0
-    }
-  ]
-}
-```
-
-Return exactly one result for every input message, in the same order:
-
-```json
-{"messages":[{"status":2}]}
-```
-
-| Status | Meaning |
-| --- | --- |
-| `2` / `STATUS_SUCCESS` | Processing succeeded; the response may be sent to configured Kafka output. |
-| `0` / `STATUS_RETRY` | Retry this record according to the retry policy. |
-| `1` / `STATUS_FAILED` | Apply the configured DLQ or explicit drop action. |
-
-Always return an explicit status. An omitted status is protobuf enum value zero,
-which means retry—not success. See [delivery, retry, and migration semantics](docs/delivery-and-security.md)
-before using WKS with production traffic.
-
-Stripped of HTTP boilerplate, that is the whole of a handler:
+Edit `process_order` in [handler.py](examples/quickstart/handler.py).
+The example already handles HTTP, base64 decoding, and per-record responses:
 
 ```python
-request = json.loads(body)
-results = []
-
-for message in request["messages"]:
-    process(base64.b64decode(message["value"]))  # your logic
-    results.append({"status": 2})                # 2 = SUCCESS
-
-return json.dumps({"messages": results})
+def process_order(order):
+    print(f"Received order {order['order_id']}", flush=True)
+    return SUCCESS
 ```
 
-The runnable version is [`examples/quickstart/handler.py`](examples/quickstart/handler.py).
-
-## Configuration
-
-A minimal configuration looks like this:
-
-```json
-{
-  "cluster": {
-    "bootstrap_servers": ["kafka:9092"]
-  },
-  "consumers": [
-    {
-      "group_id": "orders-handler",
-      "topics": ["orders"],
-      "lambdas": [{"url": "http://orders-api:8080/events"}],
-      "batch": {
-        "max_messages": 100,
-        "max_bytes": 1048576,
-        "max_wait_ms": 500
-      },
-      "retry_policy": {
-        "exponential_backoff": {
-          "initial_backoff_ms": 100,
-          "max_backoff_ms": 5000,
-          "multiplier": 2
-        },
-        "dlq": {"topic": "orders.dlq"}
-      }
-    }
-  ]
-}
-```
-
-Important options:
-
-- `cluster`: bootstrap servers plus optional SASL/PLAIN, SCRAM-SHA-256/512,
-  TLS, and mTLS settings.
-- `lambdas`: one or more HTTP targets with optional weights. Retries select a
-  target again so a failed peer does not permanently pin a batch.
-- `batch`: maximum messages, bytes, and fetch wait. Processing is ordered per
-  worker.
-- `parallel`: worker count for higher throughput; it may reorder processing
-  within a partition. It is mutually exclusive with `batch`.
-- `retry_policy`: exponential backoff followed by an explicit `dlq` or `drop`
-  action. Without a terminal action, unresolved input remains uncommitted.
-- Output policy: omit output or select `drop`; use `kafka` to publish successful
-  handler responses to another topic.
-
-WKS watches the configuration file and applies valid content changes without a
-process restart. Unknown fields are rejected. The protobuf definitions under
-[`proto/configs`](proto/configs) are the complete schema; the operational and
-security details are in [`docs/delivery-and-security.md`](docs/delivery-and-security.md).
-
-## Delivery, ordering, and failure handling
-
-WKS provides **at-least-once delivery**. It commits input offsets only after the
-handler result is resolved, required Kafka output succeeds, and any explicit
-drop or durable DLQ action completes. A crash or partial output/DLQ write before
-the input commit can cause duplicates. Handlers should be idempotent, commonly
-using topic/partition/offset or a business key for deduplication.
-
-Ordering depends on the execution mode you choose. In `batch` mode records are
-processed in order. `parallel` mode trades that for throughput: workers may
-process records from the same partition concurrently, so per-partition order is
-not preserved. Pick `batch` when downstream correctness depends on order.
-
-Rebalances, partial handler results, output failures, and restart/replay
-behavior are covered by unit, race, and real-Kafka integration tests.
-
-## Observability
-
-WKS exports OpenTelemetry metrics and serves them for Prometheus on
-`:8080/metrics`, where they appear with underscore separators:
-
-| Metric | Meaning |
-| --- | --- |
-| `wks.kafka.messages_processed` | Records successfully processed and committed |
-| `wks.kafka.messages_dead_lettered` | Records dead-lettered and committed |
-| `wks.kafka.messages_dropped` | Records explicitly dropped and committed |
-| `wks.lambda.duration_ms` | Handler invocation latency, as a histogram |
-| `wks.lambda.failures`, `wks.lambda.retries` | Handler errors and retry attempts |
-| `wks.kafka.commit_errors`, `wks.output.errors` | Offset commit and output policy failures |
-| `wks.consumers.configured`, `wks.jobs.inflight` | Active consumer groups and in-flight jobs |
-| `wks.config.applied_total` | Configuration reloads applied at runtime |
-
-[`WKS-Grafana.json`](WKS-Grafana.json) is a ready-to-import dashboard built on
-these metrics.
-
-## Run and deploy
-
-From source with Bazel:
+Restart the example handlers and send another event:
 
 ```bash
-bazel run //go/wks/server -- --config_path=/absolute/path/to/config.json
+./demo restart-handler
+./demo send '{"order_id":"124","event":"order.created"}'
 ```
 
-Useful endpoints default to:
+Return `SUCCESS`, `RETRY`, or `FAILED`; the example maps these to WKS's
+wire statuses. Your handler can use any language that serves HTTP.
+See the [request and response contract](docs/reference.md#handler-contract)
+and [connect your own Kafka](examples/quickstart/README.md#connect-your-own-kafka).
 
-- `GET :8080/health` — process health.
-- `GET :8080/metrics` — Prometheus metrics.
-- `:8090` — gRPC health service.
+## Try the interesting parts
 
-The repository also contains a [Kubernetes Helm chart](services/wks/README.md)
-and a ready-to-import [Grafana dashboard](WKS-Grafana.json). The
-[release process](docs/releases.md) produces versioned Linux AMD64/ARM64
-binaries, GHCR images, and an OCI chart. The quickstart builds from source and
-does not require any published artifact.
+| Try it | What you will see |
+| --- | --- |
+| `./demo retry` | The same order returns `RETRY`, then `SUCCESS` after backoff. |
+| `./demo dlq` | An invalid order returns `FAILED`; its original record appears in `orders.dlq`. |
+| `./demo route b` | WKS reloads its config; subsequent events go to handler B. |
+| `./demo route split` | Subsequent batches are weighted 50/50 between A and B. |
 
-## When not to use WKS
+The routing command waits for WKS to apply the change. Use `./demo send`
+to observe the selected handler. `./demo route a` restores the default.
+Weights are probabilities per invocation, not an exact alternation.
+The demo's simulated retry state is in memory per handler, not a production
+deduplication implementation.
 
-- To move data between Kafka and a database, object store, or SaaS system with
-  configuration alone, use Kafka Connect or Redpanda Connect. They ship large
-  connector catalogs; WKS ships none. Every integration is an HTTP service you
-  write and deploy — a good trade when the logic is yours, a poor one when a
-  maintained connector already exists.
-- For inline mapping, filtering, enrichment, joins, or windows without an
-  external service, use Redpanda Connect, Kafka Streams, or Flink. Every WKS
-  transform is a network round-trip by design.
-- For exactly-once processing, stateful stream processing, or Schema Registry
-  integration, use a platform designed for those requirements.
+![Recorded local demo showing a successful order and retry recovery](docs/assets/wks-demo.svg)
 
-WKS is Kafka-in, HTTP-processing, and optionally Kafka-out. It is not intended
-to become a general connector or stream-processing framework.
+[Example walkthroughs and recording details](examples/quickstart/README.md#examples).
 
-## Project status
+## See what is happening
 
-WKS is early-stage software. The core delivery path has unit, race, and
-real-Kafka integration coverage, but the project has not yet published a stable
-configuration compatibility promise or broad managed-Kafka certification.
-OAuth and AWS MSK IAM authentication are not implemented. Feedback and
-production experience reports are especially valuable — see the
-[roadmap](ROADMAP.md) for what is being worked on now.
+```bash
+./demo start --observe
+./demo retry
+```
 
-## Contributing and support
+Open [the local Grafana dashboard](http://127.0.0.1:3000/d/adpmcvw/wks).
+Prometheus scraping, the Grafana data source, and the dashboard are provisioned
+automatically. Allow a few scrapes for rate charts to populate.
 
-Issues and pull requests are welcome. Start with the [contributor
-guide](CONTRIBUTING.md), [support policy](SUPPORT.md), and
-[roadmap](ROADMAP.md). Please use the [private security reporting
-instructions](SECURITY.md) for vulnerabilities and follow the
-[code of conduct](CODE_OF_CONDUCT.md). CI checks and current merge-policy
-limits are documented [here](docs/ci.md). The repository is still private;
-public release timing has not been announced.
+![WKS Grafana dashboard captured from the local demo](docs/assets/wks-dashboard.png)
+
+Inspect throughput, batch size, handler latency, retries, and active workers.
+These are measurements from your demo, not advertised throughput benchmarks.
+[Observability setup and metric reference](docs/observability.md).
+
+## Why WKS?
+
+| You want to… | WKS provides |
+| --- | --- |
+| Keep Kafka plumbing out of your application | One HTTP batch contract, in any language |
+| Handle temporary and permanent failures | Backoff retries and explicit DLQ or drop policies |
+| Spread work across service instances | Weighted HTTP targets, reselected on retry |
+| Choose ordering or concurrency | Ordered batch processing or parallel workers |
+| Change consumers without restarting WKS | Validated configuration hot reload |
+| Operate with your existing tools | SASL/TLS/mTLS, Prometheus metrics, Grafana, and Helm |
+
+The best fit is a team whose processing logic belongs in an independently
+deployed HTTP service: order handling, custom validation, or calling an
+internal business API.
+
+## Delivery guarantees
+
+WKS provides **at-least-once delivery**. Offsets are committed only after
+handler results and any required Kafka output, durable DLQ, or explicit drop
+action complete. Crashes can cause duplicates: make side effects idempotent
+using a business key or topic/partition/offset.
+
+Batch mode processes records in order; parallel mode can reorder records
+within a partition. An omitted response status means **retry**, not success.
+
+<details>
+<summary>How success, retries, output, and dead letters fit together</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wks-flow-dark.svg">
+  <img alt="WKS sends HTTP batches, handles per-record results, and optionally writes Kafka output or dead letters before committing input offsets." src="docs/assets/wks-flow-light.svg" width="900">
+</picture>
+
+</details>
+
+Read the [delivery and security guide](docs/delivery-and-security.md) before
+using production traffic. [Configuration and metric reference](docs/reference.md).
+
+## Deploy
+
+- **Local evaluation:** `./demo start` builds everything needed from this checkout.
+- **From source:** `bazel run //go/wks/server -- --config_path=/absolute/path/to/config.json`.
+- **Kubernetes:** follow the [Helm chart guide](services/wks/README.md).
+- **Release artifacts:** see [release availability and verification](docs/releases.md)
+  for Linux AMD64/ARM64 binaries, containers, and OCI charts.
+
+The demo is local-only infrastructure, not a production deployment template.
+[Connect your cluster and HTTP service](examples/quickstart/README.md#connect-your-own-kafka).
+
+## Fit and project status
+
+WKS is **early-stage software** with unit, race, and real-Kafka integration
+coverage for the core delivery path. There is not yet a stable configuration
+compatibility promise or broad managed-Kafka certification. OAuth and AWS MSK
+IAM authentication are not implemented.
+
+WKS is designed for Kafka → HTTP processing → optional Kafka output.
+For maintained source/sink connectors, evaluate a connector platform. For
+stateful joins, windows, or exactly-once processing, use a system designed for
+those requirements. WKS does not provide Schema Registry integration.
+
+See the [roadmap](ROADMAP.md), [support policy](SUPPORT.md), and
+[CI coverage](docs/ci.md). Feedback about real workloads is especially useful:
+describe your event flow, expected ordering, and failure behavior.
+
+## Contributing
+
+Start with the [contributor guide](CONTRIBUTING.md) and
+[code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities using the
+[private security reporting instructions](SECURITY.md).
 
 ## License
 
-Licensed under Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+[Apache License 2.0](LICENSE) · [NOTICE](NOTICE)
+
 Copyright 2023–2026 Wolveflake LLC (<https://wolveflake.io>).
