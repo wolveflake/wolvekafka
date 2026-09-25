@@ -4,15 +4,25 @@
   },
   "consumers": [
     {
-      "group_id": "wolvekafka-quickstart",
-      "topics": ["demo-topic"],
+      "group_id": "orders-handler",
+      "topics": ["orders"],
       "lambdas": [
         {
           "url": "http://handler:8081/"
         }
       ],
-      "parallel": {
-        "parallelism": 1
+      "batch": {
+        "max_messages": 100,
+        "max_bytes": 1048576,
+        "max_wait_ms": 500
+      },
+      "retry_policy": {
+        "exponential_backoff": {
+          "initial_backoff_ms": 500,
+          "max_backoff_ms": 4000,
+          "multiplier": 2
+        },
+        "dlq": {"topic": "orders.dlq"}
       }
     }
   ]

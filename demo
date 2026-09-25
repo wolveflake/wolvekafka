@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Copyright 2023-2026 Wolveflake LLC
+# SPDX-License-Identifier: Apache-2.0
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+compose() { docker compose -f "$ROOT/examples/quickstart/compose.yaml" "$@"; }
+usage() {
+  cat <<'USAGE'
+Usage: ./demo COMMAND
+  start [--observe]  Build and start Kafka + WKS + two Python handlers
+  send JSON          Publish one order event and wait for its handler result
+  retry              Demonstrate a temporary failure followed by recovery
+  dlq                Demonstrate a rejected order and read the DLQ
+  route a|b|split     Hot-reload routing (100% A, 100% B, or 50/50)
+  restart-handler    Reload your edited Python code in both handlers
+  logs               Follow WKS and handler logs (Ctrl-C exits)
+  stop               Stop the demo; retain Kafka data and configuration
+  reset --yes        Remove demo containers, Kafka data, and runtime config
+USAGE
+}
+diagnostics() { compose ps; compose logs --tail=40 wks kafka handler handler-b >&2; }
+wait_http() {
+  local url=$1 attempt
+  for ((attempt=0; attempt<90; attempt++)); do
+    if curl --connect-timeout 1 --max-time 2 -fsS "$url" >/dev/null 2>&1; then return; fi
+    sleep 1
+  done
+  printf 'Timed out waiting for %s. Check ports and Docker resources.\n' "$url" >&2
+  diagnostics
+  return 1
+}
+send() {
+  local payload=$1 marker output attempt
+  payload=$(printf '%s' "$payload" | compose exec -T handler python -c 'import json,sys; value=json.load(sys.stdin); assert isinstance(value, dict), "event must be a JSON object"; print(json.dumps(value, separators=(",", ":")))')
+  marker="demo-$(date +%s)-$$-$RANDOM"
+  SENT_MARKER=$marker
+  printf '%s\t%s\n' "$marker" "$payload" | compose exec -T kafka \
+    /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 \
+    --topic orders --property parse.key=true --producer-property max.block.ms=10000 \
+    --producer-property delivery.timeout.ms=10000 --producer-property request.timeout.ms=5000
+  for ((attempt=0; attempt<30; attempt++)); do
+    output=$(compose logs --timestamps --no-color --no-log-prefix --since=90s handler handler-b | grep -F "$marker" | LC_ALL=C sort | cut -d' ' -f2- || true)
+    if printf '%s\n' "$output" | grep -Eq "^\[handler [AB]\] $marker orders\[0\]@[0-9]+ (SUCCESS|FAILED):"; then
+      printf '%s\n' "$output"
+      return
+    fi
+    sleep 1
+  done
+  printf 'No terminal handler response after 30s for %s.\n' "$marker" >&2
+  diagnostics
+  return 1
+}
+command=${1:-help}
+case "$command" in help|-h|--help) usage; exit;; esac
+command -v docker >/dev/null || { printf 'Install Docker with Compose v2 first.\n' >&2; exit 1; }
+docker compose version >/dev/null
+case "$command" in
+  start)
+    [[ $# -eq 1 || ( $# -eq 2 && $2 == --observe ) ]] || { usage; exit 1; }
+    command -v curl >/dev/null || { printf 'Install curl first.\n' >&2; exit 1; }
+    mkdir -p "$ROOT/examples/quickstart/.runtime"
+    if [[ ! -f "$ROOT/examples/quickstart/.runtime/config.json" ]]; then
+      cp "$ROOT/examples/quickstart/config.json" "$ROOT/examples/quickstart/.runtime/config.json"
+    fi
+    if [[ ${2:-} == --observe ]]; then
+      compose --profile observability up --build -d || { diagnostics; exit 1; }
+    else
+      compose up --build -d || { diagnostics; exit 1; }
+    fi
+    wait_http http://127.0.0.1:8080/health
+    # Health alone does not establish Kafka delivery; probe the full path.
+    send '{"order_id":"ready","event":"order.created"}'
+    printf '\nReady. Try: ./demo retry\nMetrics: http://127.0.0.1:8080/metrics\n'
+    if [[ ${2:-} == --observe ]]; then
+      wait_http http://127.0.0.1:3000/api/health
+      wait_http http://127.0.0.1:9090/-/ready
+      printf 'Dashboard: http://127.0.0.1:3000/d/adpmcvw/wks\n'
+    fi
+    ;;
+  send) [[ $# -eq 2 ]] || { usage; exit 1; }; send "$2" ;;
+  retry) send '{"order_id":"123","event":"order.created","demo":"retry_once"}' ;;
+  dlq)
+    offset=$(compose exec -T kafka /opt/kafka/bin/kafka-get-offsets.sh \
+      --bootstrap-server kafka:9092 --topic orders.dlq --time latest | awk -F: '$2 == 0 {print $3}')
+    [[ "$offset" =~ ^[0-9]+$ ]] || { printf 'Could not read DLQ offset.\n' >&2; exit 1; }
+    send '{"order_id":"invalid","event":"order.created","demo":"reject"}'
+    printf '\nReading the new record from orders.dlq:\n'
+    record=$(compose exec -T kafka /opt/kafka/bin/kafka-console-consumer.sh \
+      --bootstrap-server kafka:9092 --topic orders.dlq --partition 0 --offset "$offset" \
+      --property print.key=true --max-messages 1 --timeout-ms 15000)
+    printf '%s\n' "$record"
+    [[ "$record" == "$SENT_MARKER"$'\t'* ]] || { printf 'Expected dead-letter record was not found.\n' >&2; exit 1; }
+    ;;
+  route)
+    [[ $# -eq 2 && ( $2 == a || $2 == b || $2 == split ) ]] || { usage; exit 1; }
+    before=$(curl --max-time 2 -fsS http://127.0.0.1:8080/metrics | awk '/^wks_config_applied_total[{ ]/ {sum += $NF} END {print sum+0}')
+    result=0
+    compose exec -T handler python /app/route.py "$2" || result=$?
+    if [[ $result -eq 3 ]]; then exit 0; fi
+    if [[ $result -ne 0 ]]; then exit "$result"; fi
+    for ((attempt=0; attempt<30; attempt++)); do
+      after=$(curl --max-time 2 -fsS http://127.0.0.1:8080/metrics | awk '/^wks_config_applied_total[{ ]/ {sum += $NF} END {print sum+0}')
+      if (( after > before )); then
+        printf 'WKS applied the configuration.\n'
+        exit 0
+      fi
+      sleep 1
+    done
+    printf 'No configuration reload observed after 30s. Check ./demo logs.\n' >&2
+    exit 1
+    ;;
+  restart-handler) compose restart handler handler-b ;;
+  logs) compose logs --follow wks handler handler-b ;;
+  stop) compose --profile observability down ;;
+  reset)
+    [[ ${2:-} == --yes && $# -eq 2 ]] || { printf 'Reset deletes this demo’s Kafka volume and runtime config. Use ./demo reset --yes\n'; exit 1; }
+    compose --profile observability down -v
+    if [[ -f "$ROOT/examples/quickstart/.runtime/config.json" ]]; then
+      rm -- "$ROOT/examples/quickstart/.runtime/config.json"
+    fi
+    printf 'Removed demo Kafka data and runtime config. Source examples are preserved.\n'
+    ;;
+  *) usage; exit 1 ;;
+esac

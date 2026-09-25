@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="275" viewBox="0 0 1160 275" role="img" aria-label="Actual WKS demo output: one successful order, then a retry and recovery">
+<style>@media (prefers-reduced-motion:reduce){text{animation:none!important;opacity:1!important}}</style>
+<rect width="1160" height="275" rx="14" fill="#0d1117"/>
+<circle cx="24" cy="25" r="5" fill="#f85149"/><circle cx="42" cy="25" r="5" fill="#d29922"/><circle cx="60" cy="25" r="5" fill="#3fb950"/>
+<text x="90" y="30" font-family="monospace" font-size="13" fill="#8b949e">WKS · captured local demo · loops</text>
+<style>@keyframes line0{0%,0.00%{opacity:0}0.10%,100%{opacity:1}}</style>
+<text x="24" y="75" font-family="monospace" font-size="16" fill="#79c0ff" style="animation:line0 12.00s linear infinite">$ ./demo send &#x27;{&quot;order_id&quot;:&quot;123&quot;,&quot;event&quot;:&quot;order.created&quot;}&#x27;</text>
+<style>@keyframes line1{0%,12.16%{opacity:0}12.26%,100%{opacity:1}}</style>
+<text x="24" y="100" font-family="monospace" font-size="16" fill="#aff5b4" style="animation:line1 12.00s linear infinite">[handler A] demo-1790341274-14204-27706 orders[0]@6 SUCCESS: {&quot;order_id&quot;:&quot;123&quot;,&quot;event&quot;:&quot;order.created&quot;}</text>
+<style>@keyframes line2{0%,12.16%{opacity:0}12.26%,100%{opacity:1}}</style>
+<text x="24" y="125" font-family="monospace" font-size="16" fill="#79c0ff" style="animation:line2 12.00s linear infinite">$ ./demo retry</text>
+<style>@keyframes line3{0%,32.36%{opacity:0}32.46%,100%{opacity:1}}</style>
+<text x="24" y="150" font-family="monospace" font-size="16" fill="#d29922" style="animation:line3 12.00s linear infinite">[handler A] demo-1790341275-14236-10384 orders[0]@7 RETRY:</text>
+<style>@keyframes line4{0%,32.36%{opacity:0}32.46%,100%{opacity:1}}</style>
+<text x="24" y="175" font-family="monospace" font-size="16" fill="#aff5b4" style="animation:line4 12.00s linear infinite">  {&quot;order_id&quot;:&quot;123&quot;,&quot;event&quot;:&quot;order.created&quot;,&quot;demo&quot;:&quot;retry_once&quot;}</text>
+<style>@keyframes line5{0%,32.36%{opacity:0}32.46%,100%{opacity:1}}</style>
+<text x="24" y="200" font-family="monospace" font-size="16" fill="#aff5b4" style="animation:line5 12.00s linear infinite">[handler A] demo-1790341275-14236-10384 orders[0]@7 SUCCESS:</text>
+<style>@keyframes line6{0%,32.36%{opacity:0}32.46%,100%{opacity:1}}</style>
+<text x="24" y="225" font-family="monospace" font-size="16" fill="#aff5b4" style="animation:line6 12.00s linear infinite">  {&quot;order_id&quot;:&quot;123&quot;,&quot;event&quot;:&quot;order.created&quot;,&quot;demo&quot;:&quot;retry_once&quot;}</text>
+</svg>

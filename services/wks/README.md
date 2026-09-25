@@ -16,7 +16,7 @@ helm install wks oci://ghcr.io/dguptawolveflake/charts/wks \
 ```
 
 `config.json` must use Kafka bootstrap and handler addresses reachable from the
-cluster. Start with the [configuration example](../../README.md#configuration)
+cluster. Start with the [configuration example](../../docs/reference.md#configuration)
 and [delivery/security reference](../../docs/delivery-and-security.md). Do not
 store Kafka credentials in a ConfigMap; mount a Kubernetes Secret and set
 `config.enabled=false`, `config.path`, and `extraVolumes`/`extraVolumeMounts`

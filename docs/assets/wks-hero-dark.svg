@@ -1,0 +1,18 @@
+<!-- Copyright 2023-2026 Wolveflake LLC; SPDX-License-Identifier: Apache-2.0 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="190" viewBox="0 0 960 190" role="img" aria-label="Kafka to WKS to your HTTP service">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10" fill="#79c0ff"/></marker></defs>
+<rect width="960" height="190" rx="18" fill="#0d1117"/>
+<g font-family="system-ui,-apple-system,Segoe UI,sans-serif" text-anchor="middle">
+<rect x="22" y="40" width="220" height="108" rx="14" fill="#161b22" stroke="#30363d"/>
+<text x="132" y="84" font-size="21" font-weight="650" fill="#e6edf3">Kafka</text>
+<text x="132" y="114" font-size="14" fill="#9da7b3">Your events</text>
+<rect x="370" y="30" width="220" height="128" rx="14" fill="#10243a" stroke="#79c0ff"/>
+<text x="480" y="81" font-size="28" font-weight="750" fill="#79c0ff">WKS</text>
+<text x="480" y="110" font-size="14" fill="#9da7b3">Consume · Retry · Deliver</text>
+<rect x="718" y="40" width="220" height="108" rx="14" fill="#161b22" stroke="#30363d"/>
+<text x="828" y="84" font-size="21" font-weight="650" fill="#e6edf3">Your service</text>
+<text x="828" y="114" font-size="14" fill="#9da7b3">Any language. One handler.</text>
+<path d="M254 94H356" stroke="#79c0ff" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M602 94H704" stroke="#79c0ff" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="653" y="77" font-size="12" fill="#9da7b3">HTTP POST</text>
+</g></svg>

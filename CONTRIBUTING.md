@@ -24,7 +24,7 @@ review and release timing is best-effort, not guaranteed.
 
 Prerequisites are Bazelisk (the version is pinned in `.bazeliskrc`), a Go
 toolchain, and Docker for the Kafka integration suite. The
-[quickstart](README.md#five-minute-quickstart) is a useful first smoke test.
+[quickstart](README.md#quickstart) is a useful first smoke test.
 
 Run the checks that CI runs before requesting review:
 
