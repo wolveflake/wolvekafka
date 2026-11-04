@@ -11,8 +11,8 @@ Each published release is intended to contain:
 | --- | --- |
 | Linux `amd64` and `arm64` binaries (with `LICENSE` and `NOTICE`) | GitHub release assets, `wks_<tag>_linux_<arch>.tar.gz` |
 | SHA-256 manifest and SPDX source SBOM | GitHub release assets, `SHA256SUMS` and `source.spdx.json` |
-| Multi-platform container image, with Buildx provenance and SBOM | `ghcr.io/dguptawolveflake/wolvekafka:<tag>` |
-| Matching OCI Helm chart | `oci://ghcr.io/dguptawolveflake/charts/wks`, chart version without the `v` |
+| Multi-platform container image, with Buildx provenance and SBOM | `ghcr.io/wolveflake/wolvekafka:<tag>` |
+| Matching OCI Helm chart | `oci://ghcr.io/wolveflake/charts/wks`, chart version without the `v` |
 
 The Docker builder/runtime bases, `protoc` downloads, Go plugin, and release
 action revisions are pinned. Go builds use `-trimpath` and a fixed build ID;
@@ -40,13 +40,13 @@ checksum manifest also lists the other architecture, chart, and SBOM. The
 `--ignore-missing` option checks only the assets you downloaded.
 After the repository is public, GitHub artifact attestations can additionally
 be verified with `gh attestation verify <archive> --repo
-dguptawolveflake/wolvekafka`. Image provenance and an image SBOM are attached
+wolveflake/wolvekafka`. Image provenance and an image SBOM are attached
 to the GHCR image at build time.
 
 To inspect the container without deploying it:
 
 ```sh
-docker run --rm ghcr.io/dguptawolveflake/wolvekafka:v0.1.0 --version
+docker run --rm ghcr.io/wolveflake/wolvekafka:v0.1.0 --version
 ```
 
 See the [Helm chart guide](../services/wks/README.md) for Kubernetes installs.

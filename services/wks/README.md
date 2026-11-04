@@ -9,7 +9,7 @@ After a version is published, install its matching OCI chart:
 Replace `0.1.0` below with the published chart version you want to install.
 
 ```sh
-helm install wks oci://ghcr.io/dguptawolveflake/charts/wks \
+helm install wks oci://ghcr.io/wolveflake/charts/wks \
   --version 0.1.0 \
   --namespace wks --create-namespace \
   --set-file config.data=config.json
@@ -25,7 +25,7 @@ instead.
 Inspect the chart before applying it:
 
 ```sh
-helm show chart oci://ghcr.io/dguptawolveflake/charts/wks --version 0.1.0
+helm show chart oci://ghcr.io/wolveflake/charts/wks --version 0.1.0
 helm template wks ./services/wks --set-file config.data=config.json
 ```
 

@@ -5,7 +5,7 @@ basis. There is no guaranteed response time, production SLA, or paid support
 channel associated with this repository.
 
 For usage questions, configuration help, or suspected bugs, search existing
-[issues](https://github.com/dguptawolveflake/wolvekafka/issues) and open a new
+[issues](https://github.com/wolveflake/wolvekafka/issues) and open a new
 issue if needed. Include the WKS version or commit, deployment environment,
 sanitized configuration, what happened, what you expected, and minimal
 reproduction steps. The [quickstart](README.md#quickstart),

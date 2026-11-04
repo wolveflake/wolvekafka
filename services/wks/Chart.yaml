@@ -5,6 +5,6 @@ type: application
 version: 0.1.0
 appVersion: "v0.1.0"
 sources:
-  - https://github.com/dguptawolveflake/wolvekafka
+  - https://github.com/wolveflake/wolvekafka
 maintainers:
   - name: Wolveflake LLC

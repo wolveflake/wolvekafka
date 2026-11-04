@@ -3,7 +3,7 @@ nameOverride: ""
 fullnameOverride: ""
 
 image:
-  repository: ghcr.io/dguptawolveflake/wolvekafka
+  repository: ghcr.io/wolveflake/wolvekafka
   # Empty uses the chart's appVersion, which is set from the release tag.
   tag: ""
   pullPolicy: IfNotPresent
