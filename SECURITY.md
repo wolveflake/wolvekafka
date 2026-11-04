@@ -10,7 +10,7 @@ containing credentials out of public repositories and ConfigMaps. See the
 
 Security fixes are targeted at the current `main` branch and, once public
 releases exist, the latest release line. Older versions are not guaranteed
-backports. Check [releases](https://github.com/dguptawolveflake/wolvekafka/releases)
+backports. Check [releases](https://github.com/wolveflake/wolvekafka/releases)
 for available updates.
 
 ## Report privately
@@ -20,7 +20,7 @@ public issue or pull request.
 
 Email [contacts@wolveflake.io](mailto:contacts@wolveflake.io) with the subject
 **WolveKafka security report**. This is the project's current private
-reporting contact. If the repository's [Security advisories](https://github.com/dguptawolveflake/wolvekafka/security/advisories)
+reporting contact. If the repository's [Security advisories](https://github.com/wolveflake/wolvekafka/security/advisories)
 page offers **Report a vulnerability**, that private form is also suitable.
 
 The repository is currently private, and GitHub's external private

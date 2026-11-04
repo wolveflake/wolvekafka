@@ -9,7 +9,7 @@ batching, retries, and dead-letter queues.
 
 [Quickstart](#quickstart) · [Write a handler](#make-it-yours) · [Examples](#try-the-interesting-parts) · [Deploy](#deploy)
 
-[![CI](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/dguptawolveflake/wolvekafka/actions/workflows/ci.yml)
+[![CI](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 <picture>
@@ -30,7 +30,7 @@ The first run downloads images and builds WKS from source; startup time depends
 on your connection and Docker resources.
 
 ```bash
-git clone https://github.com/dguptawolveflake/wolvekafka.git
+git clone https://github.com/wolveflake/wolvekafka.git
 cd wolvekafka
 ./demo start
 ./demo send '{"order_id":"123","event":"order.created"}'

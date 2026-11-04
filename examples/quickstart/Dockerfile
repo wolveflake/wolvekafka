@@ -47,6 +47,6 @@ LABEL org.opencontainers.image.title="WolveKafka" \
       org.opencontainers.image.version="$VERSION" \
       org.opencontainers.image.revision="$VCS_REF" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/dguptawolveflake/wolvekafka"
+      org.opencontainers.image.source="https://github.com/wolveflake/wolvekafka"
 COPY --from=build /out/wks /usr/local/bin/wks
 ENTRYPOINT ["/usr/local/bin/wks"]
