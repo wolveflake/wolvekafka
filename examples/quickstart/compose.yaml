@@ -69,6 +69,9 @@ services:
       retries: 15
 
   wks:
+    # Released image by default. `./demo start --build` builds this checkout
+    # instead (tagged wolvekafka:local so it never shadows the release tag).
+    image: ${WKS_IMAGE:-ghcr.io/wolveflake/wolvekafka:v0.1.0}
     build:
       context: ../..
       dockerfile: examples/quickstart/Dockerfile

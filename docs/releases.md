@@ -50,8 +50,9 @@ docker run --rm ghcr.io/wolveflake/wolvekafka:v0.1.0 --version
 ```
 
 See the [Helm chart guide](../services/wks/README.md) for Kubernetes installs.
-The quickstart [Compose file](../examples/quickstart/compose.yaml) builds the
-same Dockerfile locally and does not depend on registry availability.
+The quickstart [Compose file](../examples/quickstart/compose.yaml) runs the
+released GHCR image. If the image cannot be pulled, Compose builds the same
+Dockerfile locally; `./demo start --build` always builds from the checkout.
 
 ## Maintainer release procedure
 
@@ -68,6 +69,8 @@ same Dockerfile locally and does not depend on registry availability.
 4. Make the GHCR image and chart packages public if GitHub created them as
    private packages. Repository visibility does not by itself guarantee
    package visibility.
+5. Update the default `WKS_IMAGE` tag in `examples/quickstart/compose.yaml`
+   to the new release so the quickstart runs it.
 
 Do not publish a release until the repository and intended package visibility
 have been decided. Artifact attestations are enabled for public repositories;

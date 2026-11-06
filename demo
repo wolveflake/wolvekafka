@@ -7,7 +7,9 @@ compose() { docker compose -f "$ROOT/examples/quickstart/compose.yaml" "$@"; }
 usage() {
   cat <<'USAGE'
 Usage: ./demo COMMAND
-  start [--observe]  Build and start Kafka + WKS + two Python handlers
+  start [--observe] [--build]
+                     Start Kafka + WKS + two Python handlers (--build: build
+                     WKS from this checkout instead of the released image)
   send JSON          Publish one order event and wait for its handler result
   retry              Demonstrate a temporary failure followed by recovery
   dlq                Demonstrate a rejected order and read the DLQ
@@ -56,22 +58,34 @@ command -v docker >/dev/null || { printf 'Install Docker with Compose v2 first.\
 docker compose version >/dev/null
 case "$command" in
   start)
-    [[ $# -eq 1 || ( $# -eq 2 && $2 == --observe ) ]] || { usage; exit 1; }
+    observe=0 build=0
+    for arg in "${@:2}"; do
+      case "$arg" in
+        --observe) observe=1 ;;
+        --build) build=1 ;;
+        *) usage; exit 1 ;;
+      esac
+    done
     command -v curl >/dev/null || { printf 'Install curl first.\n' >&2; exit 1; }
     mkdir -p "$ROOT/examples/quickstart/.runtime"
     if [[ ! -f "$ROOT/examples/quickstart/.runtime/config.json" ]]; then
       cp "$ROOT/examples/quickstart/config.json" "$ROOT/examples/quickstart/.runtime/config.json"
     fi
-    if [[ ${2:-} == --observe ]]; then
-      compose --profile observability up --build -d || { diagnostics; exit 1; }
+    up_args=(up -d)
+    if ((build)); then
+      export WKS_IMAGE=wolvekafka:local
+      up_args+=(--build)
+    fi
+    if ((observe)); then
+      compose --profile observability "${up_args[@]}" || { diagnostics; exit 1; }
     else
-      compose up --build -d || { diagnostics; exit 1; }
+      compose "${up_args[@]}" || { diagnostics; exit 1; }
     fi
     wait_http http://127.0.0.1:8080/health
     # Health alone does not establish Kafka delivery; probe the full path.
     send '{"order_id":"ready","event":"order.created"}'
     printf '\nReady. Try: ./demo retry\nMetrics: http://127.0.0.1:8080/metrics\n'
-    if [[ ${2:-} == --observe ]]; then
+    if ((observe)); then
       wait_http http://127.0.0.1:3000/api/health
       wait_http http://127.0.0.1:9090/-/ready
       printf 'Dashboard: http://127.0.0.1:3000/d/adpmcvw/wks\n'
