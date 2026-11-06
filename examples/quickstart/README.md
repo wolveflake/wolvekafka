@@ -10,7 +10,8 @@ Bash, and curl; Windows users can use WSL2. Python runs inside containers.
 ./demo send '{"order_id":"123","event":"order.created"}'
 ```
 
-The first start downloads images and builds WKS. It creates `orders` and
+The first start downloads images, including the released WKS image. To try
+changes to the WKS source, use `./demo start --build` instead. It creates `orders` and
 `orders.dlq`, starts handlers A and B, and verifies an event reaches a handler.
 `SUCCESS` in the output is the handler result, not an independent confirmation
 that the offset has already been committed.
@@ -121,7 +122,8 @@ See [the observability guide](../../docs/observability.md) for how it is wired.
 | --- | --- |
 | Cannot connect to Docker | Start Docker Desktop or your Docker daemon. |
 | Address already in use | Free ports 8080/8090; observability also uses 3000/9090. |
-| Slow first build | Image downloads and Go dependencies need network access; later builds use Docker's cache. |
+| Slow first start | Image downloads need network access. With `--build`, Go dependencies are also downloaded; later builds use Docker's cache. |
+| WKS image pull fails | Compose builds WKS locally instead. Run `./demo start --build` to always build from this checkout. |
 | Startup or delivery timeout | Inspect `./demo logs` and `docker compose -f examples/quickstart/compose.yaml ps`. |
 | Dashboard has no data | Send events, wait for a few 5-second scrapes, and check <http://127.0.0.1:9090/targets>. |
 | Edited Python has no effect | Run `./demo restart-handler`. |
@@ -138,8 +140,11 @@ To use Compose directly, initialize the runtime configuration first:
 mkdir -p examples/quickstart/.runtime
 # On a fresh checkout only; do not overwrite runtime edits you want to retain.
 cp examples/quickstart/config.json examples/quickstart/.runtime/config.json
-docker compose -f examples/quickstart/compose.yaml up --build -d
+docker compose -f examples/quickstart/compose.yaml up -d
 ```
+
+To build WKS from this checkout instead of pulling the released image, run
+`WKS_IMAGE=wolvekafka:local docker compose -f examples/quickstart/compose.yaml up --build -d`.
 
 The wrapper adds bounded readiness checks, end-to-end delivery verification,
 and readable failure diagnostics around these Compose operations.

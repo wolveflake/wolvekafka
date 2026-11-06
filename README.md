@@ -26,8 +26,8 @@ No Kafka client in your application. No JVM or Connect cluster for WKS.
 ## Quickstart
 
 You need **Git, Docker with Compose v2, Bash, and curl**. On Windows, use WSL2.
-The first run downloads images and builds WKS from source; startup time depends
-on your connection and Docker resources.
+The first run downloads the released WKS image along with Kafka and Python;
+startup time depends on your connection and Docker resources.
 
 ```bash
 git clone https://github.com/wolveflake/wolvekafka.git
@@ -163,7 +163,8 @@ using production traffic. [Configuration and metric reference](docs/reference.md
 
 ## Deploy
 
-- **Local evaluation:** `./demo start` builds everything needed from this checkout.
+- **Local evaluation:** `./demo start` runs the released image; `./demo start --build`
+  builds WKS from this checkout.
 - **From source:** `bazel run //go/wks/server -- --config_path=/absolute/path/to/config.json`.
 - **Kubernetes:** follow the [Helm chart guide](services/wks/README.md).
 - **Release artifacts:** see [release availability and verification](docs/releases.md)
