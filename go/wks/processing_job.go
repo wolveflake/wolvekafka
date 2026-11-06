@@ -13,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
@@ -91,6 +93,8 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 			return nil, fmt.Errorf("failed to create http request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		// Let the handler join the batch's trace (traceparent, tracestate, baggage).
+		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 		resp, err := lambdaHTTPClient.Do(req)
 		if err != nil {
@@ -230,10 +234,11 @@ func (c *ProcessingJob) Execute() {
 		// convert kafka messages to lambda request.
 		lambdaReq := kafkaMsgsToLambdaRequest(msgs)
 		batchBytes := approximateBatchBytes(msgs)
-		processCtx := sendCtx
+		// Continue (or link to) the producers' traces carried in record headers.
+		processCtx, links := batchSpanParent(sendCtx, otel.GetTextMapPropagator(), msgs)
 		span := trace.SpanFromContext(processCtx)
 		if c.metrics != nil {
-			processCtx, span = c.metrics.startBatchSpan(sendCtx, c.consumerName, c.jobId, len(msgs), batchBytes)
+			processCtx, span = c.metrics.startBatchSpan(processCtx, c.consumerName, c.jobId, len(msgs), batchBytes, links)
 		}
 
 		processed := func(ctx context.Context, span trace.Span) bool {

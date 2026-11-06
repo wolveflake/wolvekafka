@@ -46,6 +46,35 @@ The [metric reference](reference.md#observability) lists instrumentation names;
 the Prometheus endpoint exports names with underscores and counter/unit suffixes.
 The dashboard contains queries for the exported names.
 
+## Distributed tracing
+
+WKS creates a `wks.process_batch` span (kind `CONSUMER`) for every batch and
+propagates W3C trace context end to end:
+
+- **From Kafka:** WKS reads `traceparent`, `tracestate`, and `baggage` from
+  record headers. If every record in the batch carries the same span context
+  (always the case for a traced single-record batch), the batch span continues
+  that trace as its child. Otherwise the batch span starts a new trace and
+  links to each distinct record span context, following the OpenTelemetry
+  messaging conventions for batches.
+- **To the handler:** the HTTP request carries `traceparent` (plus `tracestate`
+  and `baggage` when present) for the batch span, so handler spans join the
+  trace. Record headers are still delivered unchanged in the request body, so a
+  handler can also continue each record's own trace.
+
+Select the span exporter with the standard OpenTelemetry environment variables:
+
+| Variable | Effect |
+| --- | --- |
+| `OTEL_TRACES_EXPORTER` | `otlp`, `console`, or `none`. Other values are rejected at startup. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP endpoint, for example `http://otel-collector:4318`. When set and `OTEL_TRACES_EXPORTER` is unset, OTLP is used. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, … | Other standard OTLP/HTTP exporter settings. |
+| `OTEL_SERVICE_NAME` | Service name shown in your tracing backend, for example `wks`. |
+
+Without any of these variables, spans are printed to stdout as before. Set
+`OTEL_TRACES_EXPORTER=none` to disable trace export in production if you do not
+collect traces.
+
 ## Refresh the screenshot
 
 With the observability profile running, send orders and exercise `./demo retry`

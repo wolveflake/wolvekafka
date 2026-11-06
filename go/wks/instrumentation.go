@@ -207,7 +207,7 @@ func (i *instrumentation) recordOutputError(ctx context.Context, consumer string
 	i.outputErrors.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
-func (i *instrumentation) startBatchSpan(ctx context.Context, consumer string, jobID int, messageCount int, batchBytes int64) (context.Context, trace.Span) {
+func (i *instrumentation) startBatchSpan(ctx context.Context, consumer string, jobID int, messageCount int, batchBytes int64, links []trace.Link) (context.Context, trace.Span) {
 	ctx = ensureContext(ctx)
 	tracer := i.tracer
 	if tracer == nil {
@@ -217,7 +217,10 @@ func (i *instrumentation) startBatchSpan(ctx context.Context, consumer string, j
 		attribute.Int("batch.messages", messageCount),
 		attribute.Int64("batch.bytes", batchBytes),
 	)
-	return tracer.Start(ctx, "wks.process_batch", trace.WithAttributes(attrs...))
+	return tracer.Start(ctx, "wks.process_batch",
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(attrs...),
+		trace.WithLinks(links...))
 }
 
 func (i *instrumentation) jobAttrs(consumer string, jobID int) []attribute.KeyValue {
