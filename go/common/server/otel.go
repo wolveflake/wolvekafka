@@ -6,12 +6,16 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	otelprom "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
@@ -52,7 +56,7 @@ func setupOTelSDK(ctx context.Context) (func(context.Context) error, error) {
 	otel.SetTextMapPropagator(prop)
 
 	// Set up trace provider.
-	tracerProvider, err := newTracerProvider()
+	tracerProvider, err := newTracerProvider(ctx)
 	if err != nil {
 		handleErr(err)
 		return shutdown, err
@@ -88,9 +92,47 @@ func newPropagator() propagation.TextMapPropagator {
 	)
 }
 
-func newTracerProvider() (*trace.TracerProvider, error) {
-	traceExporter, err := stdouttrace.New(
-		stdouttrace.WithPrettyPrint())
+const (
+	traceExporterOTLP    = "otlp"
+	traceExporterConsole = "console"
+	traceExporterNone    = "none"
+)
+
+// traceExporterKind selects the span exporter from the standard
+// OTEL_TRACES_EXPORTER variable. When it is unset, OTLP is used if an OTLP
+// endpoint is configured; otherwise spans keep going to the console as before.
+func traceExporterKind(getenv func(string) string) (string, error) {
+	kind := strings.ToLower(strings.TrimSpace(getenv("OTEL_TRACES_EXPORTER")))
+	switch kind {
+	case "":
+		if getenv("OTEL_EXPORTER_OTLP_ENDPOINT") != "" || getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") != "" {
+			return traceExporterOTLP, nil
+		}
+		return traceExporterConsole, nil
+	case traceExporterOTLP, traceExporterConsole, traceExporterNone:
+		return kind, nil
+	default:
+		return "", fmt.Errorf("unsupported OTEL_TRACES_EXPORTER %q: use otlp, console, or none", kind)
+	}
+}
+
+func newTracerProvider(ctx context.Context) (*trace.TracerProvider, error) {
+	kind, err := traceExporterKind(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+
+	var traceExporter trace.SpanExporter
+	switch kind {
+	case traceExporterNone:
+		return trace.NewTracerProvider(), nil
+	case traceExporterOTLP:
+		// Endpoint, headers, TLS, and timeout come from the standard
+		// OTEL_EXPORTER_OTLP_* environment variables.
+		traceExporter, err = otlptracehttp.New(ctx)
+	default:
+		traceExporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+	}
 	if err != nil {
 		return nil, err
 	}

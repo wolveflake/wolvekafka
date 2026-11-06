@@ -140,3 +140,7 @@ WKS exports OpenTelemetry metrics and serves them for Prometheus on
 
 [`WKS-Grafana.json`](../WKS-Grafana.json) is a ready-to-import dashboard built on
 these metrics.
+
+WKS also propagates W3C trace context from Kafka record headers to the handler
+request (`traceparent`) and can export spans over OTLP. See
+[distributed tracing](observability.md#distributed-tracing).

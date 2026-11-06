@@ -42,6 +42,7 @@ use_repo(
     "com_github_twmb_franz_go",
     "com_github_twmb_franz_go_pkg_kadm",
     "io_opentelemetry_go_otel",
+    "io_opentelemetry_go_otel_exporters_otlp_otlptrace_otlptracehttp",
     "io_opentelemetry_go_otel_exporters_prometheus",
     "io_opentelemetry_go_otel_exporters_stdout_stdoutlog",
     "io_opentelemetry_go_otel_exporters_stdout_stdouttrace",
