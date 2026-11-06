@@ -112,7 +112,11 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 			if reason == "" {
 				reason = resp.Status
 			}
-			return nil, fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, reason)
+			err := fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, reason)
+			if throttled := throttleFromResponse(resp.StatusCode, resp.Header, time.Now(), err); throttled != nil {
+				return nil, throttled
+			}
+			return nil, err
 		}
 
 		respMsgs, err := ParseLambdaResponse(body)
