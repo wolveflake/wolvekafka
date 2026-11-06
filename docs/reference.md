@@ -35,6 +35,10 @@ Return exactly one result for every input message, in the same order:
 | `0` / `STATUS_RETRY` | Retry this record according to the retry policy. |
 | `1` / `STATUS_FAILED` | Apply the configured DLQ or explicit drop action. |
 
+If the handler is overloaded, respond with HTTP `429` (optionally with
+`Retry-After`) instead of per-record statuses. WKS waits and retries without
+using up the retry budget; see [throttling](delivery-and-security.md#throttling-429-and-retry-after).
+
 Always return an explicit status. An omitted status is protobuf enum value zero,
 which means retry—not success. See [delivery, retry, and migration semantics](delivery-and-security.md)
 before using WKS with production traffic.
@@ -134,6 +138,7 @@ WKS exports OpenTelemetry metrics and serves them for Prometheus on
 | `wks.kafka.messages_dropped` | Records explicitly dropped and committed |
 | `wks.lambda.duration_ms` | Handler invocation latency, as a histogram |
 | `wks.lambda.failures`, `wks.lambda.retries` | Handler errors and retry attempts |
+| `wks.lambda.throttled` | Handler throttling responses (429, or 503 with `Retry-After`), by `http.status_code` |
 | `wks.kafka.commit_errors`, `wks.output.errors` | Offset commit and output policy failures |
 | `wks.consumers.configured`, `wks.jobs.inflight` | Active consumer groups and in-flight jobs |
 | `wks.config.applied_total` | Configuration reloads applied at runtime |

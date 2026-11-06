@@ -5,6 +5,7 @@ package wks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -36,7 +37,10 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 	policy := r.consumerCfg.GetRetryPolicy()
 	schedule := buildBackoffSchedule(policy.GetExponentialBackoff())
 	hasAction := policy.GetDrop() != nil || policy.GetDlq() != nil
-	for attempt := 0; len(pending) > 0; attempt++ {
+	// attempt counts only real failures. Throttling (429, or 503 with
+	// Retry-After) means the handler is busy, not that the records failed, so
+	// it neither advances the backoff schedule nor exhausts the retry budget.
+	for attempt := 0; len(pending) > 0; {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -45,6 +49,10 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 			subset.Messages = append(subset.Messages, req.Messages[i])
 		}
 		resp, err := fn(ctx, subset)
+		var throttled *throttledError
+		if !errors.As(err, &throttled) {
+			throttled = nil
+		}
 		if err == nil {
 			err = validateBatchResponse(subset, resp)
 		}
@@ -65,7 +73,7 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 			}
 			err = fmt.Errorf("handler requested retry")
 		}
-		if attempt >= len(schedule) && hasAction {
+		if throttled == nil && attempt >= len(schedule) && hasAction {
 			terminal = append(terminal, retry...)
 			retry = nil
 		}
@@ -92,10 +100,21 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 		} else if len(schedule) > 0 {
 			delay = schedule[len(schedule)-1]
 		}
-		if r.metrics != nil {
-			r.metrics.recordLambdaRetry(ctx, r.consumerName, r.jobId, attempt+2, err)
+		if throttled != nil {
+			if throttled.retryAfter > 0 {
+				delay = throttled.retryAfter
+			}
+			if r.metrics != nil {
+				r.metrics.recordLambdaThrottled(ctx, r.consumerName, r.jobId, throttled.status)
+			}
+			r.log.Warnf("[%s:%d] handler throttled (HTTP %d); retrying %d records in %v", r.consumerName, r.jobId, throttled.status, len(retry), delay)
+		} else {
+			if r.metrics != nil {
+				r.metrics.recordLambdaRetry(ctx, r.consumerName, r.jobId, attempt+2, err)
+			}
+			r.log.Warnf("[%s:%d] retaining %d unresolved records: %v", r.consumerName, r.jobId, len(retry), err)
+			attempt++
 		}
-		r.log.Warnf("[%s:%d] retaining %d unresolved records: %v", r.consumerName, r.jobId, len(retry), err)
 		if err := sleepWithContext(ctx, delay); err != nil {
 			return nil, err
 		}

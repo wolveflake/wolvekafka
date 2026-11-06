@@ -32,6 +32,7 @@ type instrumentation struct {
 	lambdaDurationMs     metric.Float64Histogram
 	lambdaFailures       metric.Int64Counter
 	lambdaRetries        metric.Int64Counter
+	lambdaThrottled      metric.Int64Counter
 	kafkaCommitErrors    metric.Int64Counter
 	outputErrors         metric.Int64Counter
 }
@@ -57,6 +58,7 @@ func getInstrumentation() *instrumentation {
 			lambdaDurationMs:     buildFloat64Histogram(meter, "wks.lambda.duration_ms", "End-to-end duration spent invoking downstream lambdas.", metric.WithUnit("ms")),
 			lambdaFailures:       buildInt64Counter(meter, "wks.lambda.failures", "Number of lambda invocations that returned an error."),
 			lambdaRetries:        buildInt64Counter(meter, "wks.lambda.retries", "Number of lambda retry attempts triggered after a failure."),
+			lambdaThrottled:      buildInt64Counter(meter, "wks.lambda.throttled", "Number of lambda invocations throttled by the handler (HTTP 429, or 503 with Retry-After)."),
 			kafkaCommitErrors:    buildInt64Counter(meter, "wks.kafka.commit_errors", "Count of failures while committing Kafka offsets."),
 			outputErrors:         buildInt64Counter(meter, "wks.output.errors", "Number of failures while executing output policies."),
 		}
@@ -178,6 +180,15 @@ func (i *instrumentation) recordLambdaResult(ctx context.Context, consumer strin
 	if err != nil {
 		i.lambdaFailures.Add(ctx, 1, attrs)
 	}
+}
+
+func (i *instrumentation) recordLambdaThrottled(ctx context.Context, consumer string, jobID int, status int) {
+	if i == nil {
+		return
+	}
+	ctx = ensureContext(ctx)
+	attrs := append(i.jobAttrs(consumer, jobID), attribute.Int("http.status_code", status))
+	i.lambdaThrottled.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
 func (i *instrumentation) recordLambdaRetry(ctx context.Context, consumer string, jobID int, attempt int, err error) {

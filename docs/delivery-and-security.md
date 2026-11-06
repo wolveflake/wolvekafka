@@ -58,6 +58,23 @@ Invalid JSON, missing/extra response entries, null entries, unknown statuses,
 non-2xx HTTP responses, and transport errors fail the attempt. A missing status
 uses protobuf's default `STATUS_RETRY`; it is never implicit success.
 
+### Throttling (429 and Retry-After)
+
+A handler that is overloaded, for example one backed by a rate-limited API, can
+ask WKS to slow down instead of failing records:
+
+- `429 Too Many Requests`, with or without a `Retry-After` header.
+- `503 Service Unavailable` **with** a `Retry-After` header. A 503 without
+  `Retry-After` remains an ordinary failed attempt.
+
+WKS waits for `Retry-After` (delay-seconds or an HTTP date, capped at five
+minutes), or the current backoff step when no value is given, and then retries
+the unresolved records. Throttled attempts do not advance the backoff schedule
+and do not count toward retry exhaustion, so a busy handler never sends healthy
+records to the DLQ or drop action. The wait is interrupted by rebalance,
+reload, and shutdown like any other retry. A handler that throttles
+indefinitely holds its batch uncommitted; watch `wks.lambda.throttled`.
+
 The exponential schedule includes a retry at each backoff through
 `max_backoff_ms`. With a terminal drop/DLQ action, exhausted retries apply that
 action only to unresolved records. Without an action, retry continues at the
