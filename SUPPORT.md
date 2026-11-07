@@ -12,6 +12,10 @@ reproduction steps. The [quickstart](README.md#quickstart),
 [delivery/security guide](docs/delivery-and-security.md), and
 [Helm guide](services/wks/README.md) may answer common setup questions.
 
+For informal questions and discussion, you can also join the
+[WolveKafka Discord](https://discord.gg/EPuXeJbG4j). It is community-run with no response-time
+guarantee, and the same rule applies: do not post secrets or private data.
+
 For feature proposals, describe the use case and why the existing Kafka →
 HTTP handler → optional Kafka output path does not meet it. The
 [roadmap](ROADMAP.md) lists current priorities, not guaranteed delivery dates.

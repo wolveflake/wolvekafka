@@ -7,10 +7,11 @@
 Write your business logic in any language. WKS handles consumer groups,
 batching, retries, and dead-letter queues.
 
-[Quickstart](#quickstart) · [Write a handler](#make-it-yours) · [Examples](#try-the-interesting-parts) · [Deploy](#deploy)
+[Quickstart](#quickstart) · [Write a handler](#make-it-yours) · [Examples](#try-the-interesting-parts) · [Deploy](#deploy) · [Discord](https://discord.gg/EPuXeJbG4j)
 
 [![CI](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Discord](https://img.shields.io/badge/chat-Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/EPuXeJbG4j)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wks-hero-dark.svg">
@@ -188,6 +189,13 @@ those requirements. WKS does not provide Schema Registry integration.
 See the [roadmap](ROADMAP.md), [support policy](SUPPORT.md), and
 [CI coverage](docs/ci.md). Feedback about real workloads is especially useful:
 describe your event flow, expected ordering, and failure behavior.
+
+## Community
+
+Join the [WolveKafka Discord](https://discord.gg/EPuXeJbG4j) to ask questions, share your setup,
+and follow announcements. Bugs and feature requests still belong in
+[GitHub issues](https://github.com/wolveflake/wolvekafka/issues) so they are
+tracked.
 
 ## Contributing
 
