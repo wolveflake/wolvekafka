@@ -38,9 +38,8 @@ tar -xzf wks_v0.1.0_linux_amd64.tar.gz
 Replace the example tag and architecture with the release you downloaded. The
 checksum manifest also lists the other architecture, chart, and SBOM. The
 `--ignore-missing` option checks only the assets you downloaded.
-After the repository is public, GitHub artifact attestations can additionally
-be verified with `gh attestation verify <archive> --repo
-wolveflake/wolvekafka`. Image provenance and an image SBOM are attached
+GitHub artifact attestations can additionally be verified with
+`gh attestation verify <archive> --repo wolveflake/wolvekafka`. Image provenance and an image SBOM are attached
 to the GHCR image at build time.
 
 To inspect the container without deploying it:

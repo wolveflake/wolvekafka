@@ -8,8 +8,8 @@ proposals in issues and adjust priorities based on user evidence.
 
 - Validate the documented delivery and security behavior against additional
   Kafka deployments, especially managed clusters using SASL and TLS.
-- Make the first public release and its binary, container, chart, and
-  verification workflow usable without private registry access.
+- Early-user requests: [per-key ordered fan-out](https://github.com/wolveflake/wolvekafka/issues/96)
+  and a [gRPC handler transport](https://github.com/wolveflake/wolvekafka/issues/97).
 - Improve the first-run experience with examples and troubleshooting for
   handlers, retries, DLQs, and configuration reloads.
 - Keep regression coverage strong for rebalances, partial handler results,
@@ -27,5 +27,5 @@ proposals in issues and adjust priorities based on user evidence.
 
 WKS is not a general connector catalog, in-process stream processor,
 Schema Registry client, or exactly-once transaction engine. See
-[when not to use WKS](README.md#when-not-to-use-wks). Proposals in these areas
+[fit and project status](README.md#fit-and-project-status). Proposals in these areas
 need a strong case for fitting the project's narrow Kafka-to-HTTP scope.

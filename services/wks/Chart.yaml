@@ -2,8 +2,8 @@ apiVersion: v2
 name: wks
 description: WolveKafka HTTP-to-Kafka consumer runtime
 type: application
-version: 0.1.0
-appVersion: "v0.1.0"
+version: 0.2.0
+appVersion: "v0.2.0"
 sources:
   - https://github.com/wolveflake/wolvekafka
 maintainers:
