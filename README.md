@@ -7,7 +7,7 @@
 Write your business logic in any language. WKS handles consumer groups,
 batching, retries, and dead-letter queues.
 
-[Quickstart](#quickstart) · [Write a handler](#make-it-yours) · [Examples](#try-the-interesting-parts) · [Deploy](#deploy) · [Discord](https://discord.gg/EPuXeJbG4j)
+[How it works](#how-it-works) · [Quickstart](#quickstart) · [Examples](#try-the-interesting-parts) · [Compare](#how-it-compares) · [Deploy](#deploy) · [Discord](https://discord.gg/EPuXeJbG4j)
 
 [![CI](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml/badge.svg)](https://github.com/wolveflake/wolvekafka/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -23,6 +23,52 @@ batching, retries, and dead-letter queues.
 Your service receives a batch over HTTP and returns a result for each record.
 WKS handles what happens next: commit, retry, or send to a dead-letter topic.
 No Kafka client in your application. No JVM or Connect cluster for WKS.
+
+## How it works
+
+Your whole integration is one HTTP endpoint. This is a complete handler, using
+only the Python standard library:
+
+```python
+import base64, json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+SUCCESS, RETRY, FAILED = 2, 0, 1
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        batch = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        results = []
+        for record in batch["messages"]:
+            print(base64.b64decode(record["value"]), flush=True)  # your logic here
+            results.append({"status": SUCCESS})
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(json.dumps({"messages": results}).encode())
+
+HTTPServer(("", 8081), Handler).serve_forever()
+```
+
+Then point WKS at your cluster and your endpoint:
+
+```json
+{
+  "cluster": {"bootstrap_servers": ["localhost:9092"]},
+  "consumers": [{
+    "group_id": "orders-handler",
+    "topics": ["orders"],
+    "lambdas": [{"url": "http://localhost:8081/"}]
+  }]
+}
+```
+
+Each record gets its own result. `SUCCESS` lets WKS commit it, and `RETRY` tries
+it again with backoff. `FAILED` applies the DLQ or drop action you configure;
+with neither, WKS holds the batch uncommitted rather than losing the record. If
+your service is overloaded, return `429` and WKS waits, honoring `Retry-After`,
+without using up the record's retries.
+[Handler contract](docs/reference.md#handler-contract) ·
+[all configuration options](docs/reference.md#configuration).
 
 ## Quickstart
 
@@ -47,6 +93,8 @@ Your order produces a line like this (IDs and offsets vary):
 
 **You just processed a Kafka event with a Python HTTP handler.**
 Next, change its business logic or try a failure below.
+
+![Recorded local demo showing a successful order and retry recovery](docs/assets/wks-demo.svg)
 
 <details>
 <summary>Startup trouble, logs, and cleanup</summary>
@@ -103,8 +151,6 @@ Weights are probabilities per invocation, not an exact alternation.
 The demo's simulated retry state is in memory per handler, not a production
 deduplication implementation.
 
-![Recorded local demo showing a successful order and retry recovery](docs/assets/wks-demo.svg)
-
 [Example walkthroughs and recording details](examples/quickstart/README.md#examples).
 
 ## See what is happening
@@ -122,6 +168,10 @@ automatically. Allow a few scrapes for rate charts to populate.
 
 Inspect throughput, batch size, handler latency, retries, and active workers.
 These are measurements from your demo, not advertised throughput benchmarks.
+
+WKS also continues traces across Kafka: it reads W3C `traceparent` from record
+headers, passes it to your handler, and can export spans over OTLP. The demo
+turns trace export off to keep its logs readable.
 [Observability setup and metric reference](docs/observability.md).
 
 ## Why WKS?
@@ -130,14 +180,24 @@ These are measurements from your demo, not advertised throughput benchmarks.
 | --- | --- |
 | Keep Kafka plumbing out of your application | One HTTP batch contract, in any language |
 | Handle temporary and permanent failures | Backoff retries and explicit DLQ or drop policies |
+| Protect an overloaded or rate-limited service | `429` and `Retry-After` pause delivery without spending retries |
 | Spread work across service instances | Weighted HTTP targets, reselected on retry |
 | Choose ordering or concurrency | Ordered batch processing or parallel workers |
 | Change consumers without restarting WKS | Validated configuration hot reload |
-| Operate with your existing tools | SASL/TLS/mTLS, Prometheus metrics, Grafana, and Helm |
+| Operate with your existing tools | SASL/TLS/mTLS, Prometheus metrics, OpenTelemetry traces, Grafana, and Helm |
 
 The best fit is a team whose processing logic belongs in an independently
 deployed HTTP service: order handling, custom validation, or calling an
 internal business API.
+
+## How it compares
+
+| Option | It may suit you better if… | WKS may suit you better if… |
+| --- | --- | --- |
+| Your own consumer | You need client-level control or in-process processing | You keep rewriting retries, DLQs, and rebalance handling in each service |
+| Kafka Connect HTTP sink | You already run Connect or want its connector ecosystem | You would rather not run a Connect cluster to reach one HTTP service |
+| Redpanda Connect | You want many connectors, or transforms expressed in config | Your logic is a service you deploy and scale on its own |
+| AWS Lambda event source mapping | You are on AWS and want managed, serverless scaling | You want long-running services, on any cloud, with any Kafka |
 
 ## Delivery guarantees
 
@@ -180,6 +240,15 @@ WKS is **early-stage software** with unit, race, and real-Kafka integration
 coverage for the core delivery path. There is not yet a stable configuration
 compatibility promise or broad managed-Kafka certification. OAuth and AWS MSK
 IAM authentication are not implemented.
+
+Limits worth knowing before you adopt it:
+
+- Handlers are HTTP only for now; [gRPC is requested](https://github.com/wolveflake/wolvekafka/issues/97).
+- Parallel mode can reorder records. [Per-key ordered fan-out](https://github.com/wolveflake/wolvekafka/issues/96)
+  is not implemented yet.
+- A stalled handler can hold its worker's other partitions, because batches
+  stay uncommitted until they resolve. Monitor progress and configure a DLQ for
+  poison messages.
 
 WKS is designed for Kafka → HTTP processing → optional Kafka output.
 For maintained source/sink connectors, evaluate a connector platform. For

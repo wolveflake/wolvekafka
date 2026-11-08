@@ -76,6 +76,9 @@ services:
       context: ../..
       dockerfile: examples/quickstart/Dockerfile
     command: ["--config_path=/etc/wks/config.json"]
+    environment:
+      # Console span export would bury the demo's logs. See docs/observability.md.
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-none}
     depends_on:
       handler:
         condition: service_healthy
