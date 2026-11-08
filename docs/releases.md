@@ -31,7 +31,7 @@ GitHub release, then run:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
-tar -xzf wks_v0.1.0_linux_amd64.tar.gz
+tar -xzf wks_v0.2.0_linux_amd64.tar.gz
 ./wks --version
 ```
 
@@ -45,7 +45,7 @@ to the GHCR image at build time.
 To inspect the container without deploying it:
 
 ```sh
-docker run --rm ghcr.io/wolveflake/wolvekafka:v0.1.0 --version
+docker run --rm ghcr.io/wolveflake/wolvekafka:v0.2.0 --version
 ```
 
 See the [Helm chart guide](../services/wks/README.md) for Kubernetes installs.
@@ -68,7 +68,8 @@ Dockerfile locally; `./demo start --build` always builds from the checkout.
 4. Make the GHCR image and chart packages public if GitHub created them as
    private packages. Repository visibility does not by itself guarantee
    package visibility.
-5. Update the default `WKS_IMAGE` tag in `examples/quickstart/compose.yaml`
+5. Update the default `WKS_IMAGE` tag in `examples/quickstart/compose.yaml`, the
+   version examples in this file, and those in `services/wks/README.md`
    to the new release so the quickstart runs it.
 
 Do not publish a release until the repository and intended package visibility
@@ -80,7 +81,7 @@ is not a substitute for making its packages accessible to users.
 To reproduce archives locally from a checked-out release commit:
 
 ```sh
-scripts/release/build-binaries.sh v0.1.0 "$(git rev-parse HEAD)" dist
+scripts/release/build-binaries.sh v0.2.0 "$(git rev-parse HEAD)" dist
 ```
 
 The script refuses to overwrite existing archives. Use an empty output
