@@ -195,9 +195,9 @@ internal business API.
 | Option | It may suit you better if… | WKS may suit you better if… |
 | --- | --- | --- |
 | Your own consumer | You need client-level control or in-process processing | You keep rewriting retries, DLQs, and rebalance handling in each service |
-| Kafka Connect HTTP sink | You already run Connect or want its connector ecosystem | You would rather not run a Connect cluster to reach one HTTP service |
+| Confluent HTTP Sink connector | You use Confluent Cloud, or already run a licensed Connect cluster | You want an open-source option without a Connect cluster |
 | Redpanda Connect | You want many connectors, or transforms expressed in config | Your logic is a service you deploy and scale on its own |
-| AWS Lambda event source mapping | You are on AWS and want managed, serverless scaling | You want long-running services, on any cloud, with any Kafka |
+| AWS Lambda event source mapping | You are on AWS and want managed, serverless scaling | Your handlers are long-running services you deploy anywhere |
 
 ## Delivery guarantees
 
