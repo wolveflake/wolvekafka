@@ -31,6 +31,22 @@ wait_http() {
   diagnostics
   return 1
 }
+# Prints one line per port that something other than this demo is listening on.
+# Ports already published by this demo's running containers are fine to reuse.
+busy_ports() {
+  local port ours holder
+  ours=$(compose ps --format '{{.Ports}}' 2>/dev/null || true)
+  for port in "$@"; do
+    [[ $ours == *":$port->"* ]] && continue
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || continue
+    holder=""
+    if command -v lsof >/dev/null; then
+      holder=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fpc 2>/dev/null |
+        awk '/^p/ {pid = substr($0, 2)} /^c/ {print substr($0, 2) " (PID " pid ")"; exit}' || true)
+    fi
+    printf 'Port %s is already in use%s.\n' "$port" "${holder:+ by $holder}"
+  done
+}
 send() {
   local payload=$1 marker output attempt
   payload=$(printf '%s' "$payload" | compose exec -T handler python -c 'import json,sys; value=json.load(sys.stdin); assert isinstance(value, dict), "event must be a JSON object"; print(json.dumps(value, separators=(",", ":")))')
@@ -67,6 +83,14 @@ case "$command" in
       esac
     done
     command -v curl >/dev/null || { printf 'Install curl first.\n' >&2; exit 1; }
+    ports=(8080 8090)
+    if ((observe)); then ports+=(3000 9090); fi
+    busy=$(busy_ports "${ports[@]}")
+    if [[ -n $busy ]]; then
+      printf '%s\n' "$busy" >&2
+      printf 'Free the port (for example, stop a kubectl port-forward), then run ./demo start again.\n' >&2
+      exit 1
+    fi
     mkdir -p "$ROOT/examples/quickstart/.runtime"
     if [[ ! -f "$ROOT/examples/quickstart/.runtime/config.json" ]]; then
       cp "$ROOT/examples/quickstart/config.json" "$ROOT/examples/quickstart/.runtime/config.json"
