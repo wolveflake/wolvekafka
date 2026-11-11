@@ -26,27 +26,24 @@ No Kafka client in your application. No JVM or Connect cluster for WKS.
 
 ## How it works
 
-Your whole integration is one HTTP endpoint. This is a complete handler, using
-only the Python standard library:
+Your whole integration is one HTTP endpoint. This is a complete handler in
+Flask (`pip install flask`); any language that serves HTTP works:
 
 ```python
-import base64, json
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from flask import Flask, request
+import base64
 
-SUCCESS, RETRY, FAILED = 2, 0, 1
+app = Flask(__name__)
 
-class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        batch = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        results = []
-        for record in batch["messages"]:
-            print(base64.b64decode(record["value"]), flush=True)  # your logic here
-            results.append({"status": SUCCESS})
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(json.dumps({"messages": results}).encode())
+@app.post("/")
+def handle():
+    results = []
+    for record in request.json["messages"]:
+        print(base64.b64decode(record["value"]))  # your business logic
+        results.append({"status": 2})  # 2 = SUCCESS, 0 = RETRY, 1 = FAILED
+    return {"messages": results}
 
-HTTPServer(("", 8081), Handler).serve_forever()
+app.run(port=8081)
 ```
 
 Then point WKS at your cluster and your endpoint:
