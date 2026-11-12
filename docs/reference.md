@@ -142,6 +142,12 @@ WKS exports OpenTelemetry metrics and serves them for Prometheus on
 | `wks.kafka.commit_errors`, `wks.output.errors` | Offset commit and output policy failures |
 | `wks.consumers.configured`, `wks.jobs.inflight` | Active consumer groups and in-flight jobs |
 | `wks.config.applied_total` | Configuration reloads applied at runtime |
+| `wks.kafka.consumer_lag` | Records not yet committed, by `consumer`, `topic`, and `partition` |
+| `wks.kafka.consumer_lag_seconds` | Age of the oldest record not yet committed; zero when caught up |
+| `wks.kafka.partitions_assigned` | Partitions this process owns, by `consumer` and `topic` |
+
+Lag metrics are on by default. See [consumer lag](observability.md#consumer-lag)
+for how they are measured and how to reduce series count on large topics.
 
 [`WKS-Grafana.json`](../WKS-Grafana.json) is a ready-to-import dashboard built on
 these metrics.

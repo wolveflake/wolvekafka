@@ -30,6 +30,9 @@ func (c *Consumer) pollOwnedBatches() chan []*Message {
 			pollCancel()
 			logFetchErrors(c.log, fetches)
 			records := fetches.Records()
+			if c.lag != nil {
+				c.lag.fetched(records)
+			}
 			aborted := false
 			for start := 0; start < len(records) && !aborted; {
 				end, size := start, 0
@@ -56,6 +59,9 @@ func (c *Consumer) pollOwnedBatches() chan []*Message {
 				// Cooperative rebalances can retain partitions, so releasing the
 				// hold alone is insufficient to replay uncommitted fetched records.
 				c.franzClient.SetOffsets(replayOffsets(records))
+				if c.lag != nil {
+					c.lag.rewound(records)
+				}
 			}
 			cancel()
 			c.franzClient.AllowRebalance()

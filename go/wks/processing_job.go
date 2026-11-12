@@ -73,6 +73,11 @@ type ProcessingJob struct {
 	// retry policy handler.
 	retryPolicy *RetryPolicy
 
+	// how often to refresh partition offsets for lag metrics; zero disables.
+	lagRefreshInterval time.Duration
+	// removes this worker's partitions from the lag gauges.
+	unregisterLag func()
+
 	shutdownOnce sync.Once
 }
 
@@ -176,6 +181,8 @@ func (c *ProcessingJob) Execute() {
 		PollDuration:    time.Millisecond * 500,
 		Topics:          c.consumerCfg.GetTopics(),
 		RequireBatchAck: true,
+
+		LagRefreshInterval: c.lagRefreshInterval,
 	}
 	if batchCfg := c.consumerCfg.GetBatch(); batchCfg != nil {
 		if v := batchCfg.GetMaxMessages(); v > 0 {
@@ -194,6 +201,9 @@ func (c *ProcessingJob) Execute() {
 		return
 	}
 	c.kafkaConsumer = kafkaConsumer
+	if c.metrics != nil && c.lagRefreshInterval > 0 {
+		c.unregisterLag = c.metrics.registerLagSource(c.consumerName, kafkaConsumer)
+	}
 
 	if err := c.ensureOutputProducer(); err != nil {
 		c.log.Errorf("[%v:%v] failed to create output kafka producer: %v", c.consumerName, c.jobId, err)
@@ -382,6 +392,10 @@ func (c *ProcessingJob) done() {
 
 		if c.metrics != nil {
 			c.metrics.jobFinished(c.ctx, c.consumerName, c.jobId)
+		}
+
+		if c.unregisterLag != nil {
+			c.unregisterLag()
 		}
 
 		if c.kafkaConsumer != nil {

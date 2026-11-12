@@ -18,6 +18,8 @@ var (
 	serviceID   = flag.String("service_id", "wolvekafka", "Unique service identifier used for registration and logs.")
 	configPath  = flag.String("config_path", "/etc/wks/config/config.json", "Path to the JSON configuration consumed by the WKS service.")
 	showVersion = flag.Bool("version", false, "Print the WKS version and source revision, then exit.")
+	lagMetrics  = flag.String("lag_metrics", wks.LagByPartition, "Consumer lag reporting: \"partition\" (one series per partition), \"topic\" (summed per topic), or \"off\".")
+	lagRefresh  = flag.Duration("lag_refresh_interval", 15*time.Second, "How often each worker reads the newest partition offsets from Kafka for lag metrics.")
 	version     = "dev"
 	commit      = "unknown"
 )
@@ -39,7 +41,13 @@ func main() {
 	// starting the WKS service so the instrumentation binds to the real meter.
 	srv := server.SetUpServer(ctx, server.PROTO_GRPC, *serviceID)
 
-	wksService, err := wks.NewWolveKafkaService(ctx, wks.WolveKafkaParams{Config: cfg})
+	wksService, err := wks.NewWolveKafkaService(ctx, wks.WolveKafkaParams{
+		Config: cfg,
+		LagMetrics: wks.LagMetricsOptions{
+			Granularity:     *lagMetrics,
+			RefreshInterval: *lagRefresh,
+		},
+	})
 	if err != nil {
 		srv.Stop()
 		logger.S().Fatalf("failed to start WKS service: %v", err)
