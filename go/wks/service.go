@@ -31,6 +31,9 @@ type WolveKafkaService struct {
 	// service parameters.
 	params *WolveKafkaParams
 
+	// lag metric settings, with defaults applied.
+	lagOpts LagMetricsOptions
+
 	// logger.
 	log *zap.SugaredLogger
 
@@ -48,6 +51,10 @@ type WolveKafkaService struct {
 type WolveKafkaParams struct {
 	Config *configs.Config
 
+	// LagMetrics controls consumer lag reporting. The zero value reports lag
+	// per partition, refreshed every 15 seconds.
+	LagMetrics LagMetricsOptions
+
 	// event sending function (mostly for testing purposes).
 	sendEventFunc sendEventFunc
 	// function to create new consumer (mostly for testing purposes).
@@ -64,8 +71,15 @@ type consumerRef struct {
 
 // NewWolveKafkaService creates a new WKS service instance.
 func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveKafkaService, error) {
+	lagOpts, err := params.LagMetrics.withDefaults()
+	if err != nil {
+		return nil, err
+	}
 	srvCtx, cancelFunc := context.WithCancel(ctx)
 	metrics := getInstrumentation()
+	if metrics != nil {
+		metrics.lag.setGranularity(lagOpts.Granularity)
+	}
 
 	// set default functions if not provided.
 	newConsumerFunc := kafka.NewConsumer
@@ -83,6 +97,7 @@ func NewWolveKafkaService(ctx context.Context, params WolveKafkaParams) (*WolveK
 		ctxCancel:       cancelFunc,
 		log:             logger.S(),
 		params:          &params,
+		lagOpts:         lagOpts,
 		metrics:         metrics,
 		newConsumerFunc: newConsumerFunc,
 		sendEventFunc:   sendEventFunc,
@@ -200,8 +215,9 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) error {
 						ConsumerCfg: consumerCfg,
 					}),
 
-					newConsumerFunc: w.newConsumerFunc,
-					metrics:         w.metrics,
+					newConsumerFunc:    w.newConsumerFunc,
+					metrics:            w.metrics,
+					lagRefreshInterval: w.lagOpts.refreshInterval(),
 				}
 				workPool.ProcessWithWaitGroup(job, wait)
 				jobs[idx] = job

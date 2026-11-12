@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "connection.go",
         "consumer.go",
+        "lag.go",
         "owned_batches.go",
         "producer.go",
         "types.go",
@@ -18,6 +19,7 @@ go_library(
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go//pkg/kerr",
         "@com_github_twmb_franz_go//pkg/sasl/plain",
+        "@com_github_twmb_franz_go_pkg_kadm//:kadm",
         "@com_github_twmb_franz_go//pkg/sasl/scram",
         "@org_uber_go_zap//:zap",
     ],
@@ -28,6 +30,7 @@ go_test(
     srcs = [
         "connection_test.go",
         "consumer_test.go",
+        "lag_test.go",
         "owned_batches_test.go",
         "producer_test.go",
     ],

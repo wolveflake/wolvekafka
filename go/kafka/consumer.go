@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
@@ -27,6 +28,9 @@ const (
 	defaultBatchMaxBytes = 1 << 20 // 1 MiB
 	// defaultBatchMaxWait bounds how long a partial batch can wait before being emitted.
 	defaultBatchMaxWait = 500 * time.Millisecond
+	// maxLagRequestTimeout bounds one offset refresh so a slow broker cannot
+	// pile up requests.
+	maxLagRequestTimeout = 10 * time.Second
 )
 
 var errKafkaClientClosed = errors.New("kafka client closed")
@@ -73,6 +77,11 @@ type Consumer struct {
 	batchMaxMessages int
 	batchMaxBytes    int
 	batchMaxWait     time.Duration
+
+	// lag follows owned partitions for lag metrics; nil when disabled.
+	lag                *lagTracker
+	lagRefreshInterval time.Duration
+	lagDone            chan struct{}
 }
 
 type ConsumerParams struct {
@@ -97,6 +106,9 @@ type ConsumerParams struct {
 	Client KafkaConsumerClient
 	// RequireBatchAck holds partition ownership until CompleteBatch is called.
 	RequireBatchAck bool
+	// LagRefreshInterval is how often the newest offsets of owned partitions
+	// are read from Kafka for lag reporting. Zero disables lag tracking.
+	LagRefreshInterval time.Duration
 }
 
 // NewConsumer creates a new Kafka consumer and subscribes it to the specified topics.
@@ -124,6 +136,19 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.DisableAutoCommit(),
 	)
+	if consumer.lag != nil {
+		opts = append(opts,
+			kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, assigned map[string][]int32) {
+				consumer.lag.assign(assigned)
+			}),
+			kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, revoked map[string][]int32) {
+				consumer.lag.revoke(revoked)
+			}),
+			kgo.OnPartitionsLost(func(_ context.Context, _ *kgo.Client, lost map[string][]int32) {
+				consumer.lag.revoke(lost)
+			}),
+		)
+	}
 	if params.RequireBatchAck {
 		opts = append(opts, kgo.BlockRebalanceOnPoll(), kgo.OnPartitionsCallbackBlocked(func(context.Context, *kgo.Client) {
 			consumer.stateMu.Lock()
@@ -143,6 +168,10 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 
 	consumer.franzClient = franzClient
 	consumer.kafkaConsumer = &franzConsumerAdapter{client: franzClient, ctx: consumer.ctx}
+	if consumer.lag != nil {
+		consumer.lagDone = make(chan struct{})
+		go consumer.refreshLagLoop()
+	}
 
 	return consumer, nil
 }
@@ -176,7 +205,7 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 		batchDone = make(chan bool)
 	}
 
-	return &Consumer{
+	consumer := &Consumer{
 		ctx:              ctx,
 		cancel:           cancel,
 		batchDone:        batchDone,
@@ -189,6 +218,11 @@ func newConsumer(ctx context.Context, params ConsumerParams) *Consumer {
 		batchMaxBytes:    batchMaxBytes,
 		batchMaxWait:     batchMaxWait,
 	}
+	if params.LagRefreshInterval > 0 {
+		consumer.lag = newLagTracker()
+		consumer.lagRefreshInterval = params.LagRefreshInterval
+	}
+	return consumer
 }
 
 // Poll polls messages from Kafka and delivers them in batches bounded by the configured limits.
@@ -269,6 +303,9 @@ func (c *Consumer) Poll() (chan []*Message, error) {
 
 					batch = append(batch, e)
 					batchBytes += approximateMessageSize(e)
+					if c.lag != nil {
+						c.lag.fetched([]*Message{e})
+					}
 
 					if len(batch) == 1 && c.batchMaxWait > 0 {
 						flushDeadline = time.Now().Add(c.batchMaxWait)
@@ -355,6 +392,9 @@ func (c *Consumer) Close() error {
 		if started {
 			<-c.pollDone
 		}
+		if c.lagDone != nil {
+			<-c.lagDone
+		}
 		if c.franzClient != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			c.franzClient.LeaveGroupContext(ctx)
@@ -409,7 +449,100 @@ func (c *Consumer) CommitMessage(msg *Message) ([]TopicPartition, error) {
 	if c.kafkaConsumer == nil {
 		return nil, fmt.Errorf("kafka consumer is not initialized")
 	}
-	return c.kafkaConsumer.CommitMessage(msg)
+	committed, err := c.kafkaConsumer.CommitMessage(msg)
+	if err == nil && c.lag != nil {
+		c.lag.committed(msg)
+	}
+	return committed, err
+}
+
+// Lag reports the partitions this consumer currently owns and how far each is
+// behind. It returns nil when lag tracking is disabled.
+func (c *Consumer) Lag(now time.Time) []PartitionLag {
+	if c == nil || c.lag == nil {
+		return nil
+	}
+	return c.lag.snapshot(now)
+}
+
+func (c *Consumer) refreshLagLoop() {
+	defer close(c.lagDone)
+	ticker := time.NewTicker(c.lagRefreshInterval)
+	defer ticker.Stop()
+	failing := false
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		err := c.refreshLag()
+		switch {
+		case err != nil && c.ctx.Err() != nil:
+			return
+		case err != nil && !failing:
+			c.log.Warnf("Lag metrics for consumer %q are stale: could not read partition offsets: %v", c.name, err)
+			failing = true
+		case err == nil && failing:
+			c.log.Infof("Lag metrics for consumer %q recovered", c.name)
+			failing = false
+		}
+	}
+}
+
+// refreshLag reads the newest offset of every owned partition, and the log
+// start offset when some partition has no committed offset yet. It uses list
+// offset requests on the consumer's own client and never touches the group.
+func (c *Consumer) refreshLag() error {
+	topics, needStart := c.lag.wanted()
+	if len(topics) == 0 {
+		return nil
+	}
+	timeout := c.lagRefreshInterval
+	if timeout > maxLagRequestTimeout {
+		timeout = maxLagRequestTimeout
+	}
+	ctx, cancel := context.WithTimeout(c.ctx, timeout)
+	defer cancel()
+	admin := kadm.NewClient(c.franzClient)
+
+	ends, err := admin.ListEndOffsets(ctx, topics...)
+	if err != nil {
+		return err
+	}
+	end, err := listedOffsets(ends)
+	var start map[topicPartition]int64
+	if needStart {
+		starts, startErr := admin.ListStartOffsets(ctx, topics...)
+		if startErr != nil {
+			return startErr
+		}
+		var partialErr error
+		start, partialErr = listedOffsets(starts)
+		err = errors.Join(err, partialErr)
+	}
+	committed := make(map[topicPartition]int64)
+	for topic, partitions := range c.franzClient.CommittedOffsets() {
+		for partition, offset := range partitions {
+			committed[topicPartition{topic, partition}] = offset.Offset
+		}
+	}
+	// Apply whatever was read even if some partitions failed.
+	c.lag.updateOffsets(end, start, committed)
+	return err
+}
+
+func listedOffsets(listed kadm.ListedOffsets) (map[topicPartition]int64, error) {
+	out := make(map[topicPartition]int64)
+	var errs []error
+	listed.Each(func(o kadm.ListedOffset) {
+		if o.Err != nil {
+			errs = append(errs, fmt.Errorf("%s[%d]: %w", o.Topic, o.Partition, o.Err))
+			return
+		}
+		out[topicPartition{o.Topic, o.Partition}] = o.Offset
+	})
+	return out, errors.Join(errs...)
 }
 
 // franzConsumerAdapter adapts franz-go client to the KafkaConsumerClient interface.

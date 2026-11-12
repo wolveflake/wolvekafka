@@ -4,6 +4,7 @@ go_test(
     name = "wks_e2e_test",
     srcs = [
         "delivery_integration_test.go",
+        "lag_integration_test.go",
         "rebalance_integration_test.go",
         "wks_e2e_integration_test.go",
     ],

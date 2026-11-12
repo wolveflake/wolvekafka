@@ -46,6 +46,50 @@ The [metric reference](reference.md#observability) lists instrumentation names;
 the Prometheus endpoint exports names with underscores and counter/unit suffixes.
 The dashboard contains queries for the exported names.
 
+## Consumer lag
+
+Lag is how far a consumer group is behind the newest records in Kafka. WKS
+reports it two ways, for every partition a WKS process currently owns:
+
+| Prometheus name | Meaning |
+| --- | --- |
+| `wks_kafka_consumer_lag` | Records written to the partition but not yet committed by the group. |
+| `wks_kafka_consumer_lag_seconds` | Age of the oldest of those records, from its Kafka timestamp. Zero when caught up. |
+| `wks_kafka_partitions_assigned` | Number of partitions this process owns, per group and topic. |
+
+Records count only when they can still be consumed: a group without a
+committed offset is measured from the start of the log, and records already
+deleted by retention are not counted.
+
+**How it is measured.** Each worker reads the newest offset of its partitions
+from Kafka every `--lag_refresh_interval` (default 15s), and the log start
+offset only while some partition has no committed offset. Commits made by WKS
+update the gauges immediately. The time lag uses the timestamp of the oldest
+record the worker has fetched but not committed, so it keeps growing while a
+batch is stuck in retries.
+
+**What to expect.**
+
+- Each process reports only the partitions it owns. Sum across pods for a
+  group's total: `sum by (consumer, topic) (wks_kafka_consumer_lag)`.
+- After a rebalance, a partition appears under its new owner once that worker
+  has read offsets, up to one refresh interval later.
+- The time lag is omitted for a partition that has a backlog but whose next
+  record has not been fetched yet, for example just after startup. Record lag
+  is still reported.
+- Record timestamps are set by producers by default, so a producer with a
+  wrong clock skews the time lag.
+- If offsets cannot be read, WKS logs one warning and keeps the last known
+  values until a refresh succeeds.
+
+**Large topics.** One series per partition can be a lot on topics with
+thousands of partitions. Start WKS with `--lag_metrics=topic` to report one
+series per group and topic instead: record lag is summed and time lag is the
+oldest across partitions. `--lag_metrics=off` disables lag reporting and its
+offset requests.
+
+The dashboard's **Consumer lag** panels chart both values per group and topic.
+
 ## Distributed tracing
 
 WKS creates a `wks.process_batch` span (kind `CONSUMER`) for every batch and

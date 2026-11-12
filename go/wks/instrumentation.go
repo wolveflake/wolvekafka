@@ -35,6 +35,9 @@ type instrumentation struct {
 	lambdaThrottled      metric.Int64Counter
 	kafkaCommitErrors    metric.Int64Counter
 	outputErrors         metric.Int64Counter
+
+	// lag reports consumer lag gauges; nil if the gauges could not be created.
+	lag *lagMetrics
 }
 
 var (
@@ -62,6 +65,11 @@ func getInstrumentation() *instrumentation {
 			kafkaCommitErrors:    buildInt64Counter(meter, "wks.kafka.commit_errors", "Count of failures while committing Kafka offsets."),
 			outputErrors:         buildInt64Counter(meter, "wks.output.errors", "Number of failures while executing output policies."),
 		}
+		lag, err := newLagMetrics(meter)
+		if err != nil {
+			logger.S().Warnf("failed to create consumer lag gauges: %v", err)
+		}
+		inst.lag = lag
 	})
 	return inst
 }
@@ -232,6 +240,15 @@ func (i *instrumentation) startBatchSpan(ctx context.Context, consumer string, j
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(attrs...),
 		trace.WithLinks(links...))
+}
+
+// registerLagSource reports a worker's partitions in the lag gauges until the
+// returned function is called.
+func (i *instrumentation) registerLagSource(consumer string, source lagSource) func() {
+	if i == nil {
+		return func() {}
+	}
+	return i.lag.register(consumer, source)
 }
 
 func (i *instrumentation) jobAttrs(consumer string, jobID int) []attribute.KeyValue {
