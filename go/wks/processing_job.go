@@ -6,6 +6,7 @@ package wks
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,14 +29,20 @@ var (
 	// interval to recreate consumer in case of failure.
 	consumerRecreationInterval = 10 * time.Second
 
-	// defaultLambdaTimeout is the HTTP client timeout for lambda invocations.
+	// defaultLambdaTimeout bounds a lambda invocation when the lambda sets no timeout_ms.
 	defaultLambdaTimeout = 30 * time.Second
 
-	// lambdaHTTPClient is a shared HTTP client with a reasonable timeout.
-	lambdaHTTPClient = &http.Client{
-		Timeout: defaultLambdaTimeout,
-	}
+	// lambdaHTTPClient is shared by all lambdas; each request carries its own deadline.
+	lambdaHTTPClient = &http.Client{}
 )
+
+// lambdaTimeout returns the per-request deadline for a lambda.
+func lambdaTimeout(lambda *configs_pb.Lambda) time.Duration {
+	if ms := lambda.GetTimeoutMs(); ms > 0 {
+		return time.Duration(ms) * time.Millisecond
+	}
+	return defaultLambdaTimeout
+}
 
 type sendEventFunc func(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error)
 
@@ -88,6 +95,9 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 
 	sendOnce := func(ctx context.Context, batch *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
 		lambda := c.lambdaSelector.Select()
+		timeout := lambdaTimeout(lambda)
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
 		payload, err := ConvertLambdaRequestToJson(batch)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal lambda request: %w", err)
@@ -103,6 +113,9 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 
 		resp, err := lambdaHTTPClient.Do(req)
 		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("lambda request timed out after %v: %w", timeout, err)
+			}
 			return nil, fmt.Errorf("failed to send lambda request: %w", err)
 		}
 		defer resp.Body.Close()
