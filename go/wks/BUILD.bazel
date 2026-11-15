@@ -43,6 +43,7 @@ go_test(
     srcs = [
         "batch_retry_test.go",
         "config_watcher_test.go",
+        "handler_timeout_test.go",
         "lag_metrics_test.go",
         "lambda_selector_test.go",
         "output_policy_test.go",

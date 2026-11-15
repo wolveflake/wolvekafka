@@ -95,7 +95,12 @@ Important options:
 - `cluster`: bootstrap servers plus optional SASL/PLAIN, SCRAM-SHA-256/512,
   TLS, and mTLS settings.
 - `lambdas`: one or more HTTP targets with optional weights. Retries select a
-  target again so a failed peer does not permanently pin a batch.
+  target again so a failed peer does not permanently pin a batch. Each target
+  takes an optional `timeout_ms` (default 30000, maximum 900000) for one
+  request, including reading the response. A timed-out request is retried
+  under the consumer's `retry_policy`, so handlers that run long should be
+  idempotent. A pending rebalance cancels the in-flight request regardless of
+  `timeout_ms`, so a slow handler cannot hold partitions past a rebalance.
 - `batch`: maximum messages, bytes, and fetch wait. Processing is ordered per
   worker.
 - `parallel`: worker count for higher throughput; it may reorder processing

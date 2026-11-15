@@ -43,6 +43,9 @@ func ValidateCluster(cluster *configs_pb.Cluster) error {
 	return nil
 }
 
+// MaxLambdaTimeoutMs is the largest accepted lambda timeout_ms (15 minutes).
+const MaxLambdaTimeoutMs = 15 * 60 * 1000
+
 // ValidateConsumers to ensure each consumer has required fields and no duplicates.
 func ValidateConsumers(consumers []*configs_pb.Consumer) error {
 	groupIds := make(map[string]bool)
@@ -79,6 +82,9 @@ func ValidateConsumers(consumers []*configs_pb.Consumer) error {
 				return fmt.Errorf("consumer %s has duplicate lambda url: %s", consumer.GetGroupId(), lambda.GetUrl())
 			}
 			lambdasUrls[lambda.GetUrl()] = true
+			if lambda.GetTimeoutMs() > MaxLambdaTimeoutMs {
+				return fmt.Errorf("consumer %s lambda %s timeout_ms %d exceeds the maximum of %d", consumer.GetGroupId(), lambda.GetUrl(), lambda.GetTimeoutMs(), MaxLambdaTimeoutMs)
+			}
 		}
 	}
 

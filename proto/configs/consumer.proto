@@ -61,6 +61,10 @@ message Lambda {
   // Optional. Default is 100.
   // weight is used to determine the probability of selecting this lambda when multiple lambdas are available.
   uint32 weight = 2;
+
+  // Optional. Default is 30000 (30 seconds), maximum is 900000 (15 minutes).
+  // timeout_ms bounds one HTTP request to this lambda, including reading the response.
+  uint32 timeout_ms = 3;
 }
 
 message BatchConsumer {
