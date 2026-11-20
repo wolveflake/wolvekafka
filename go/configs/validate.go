@@ -5,6 +5,8 @@ package configs
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
 
 	configs_pb "wolvekafka/proto/configs"
@@ -82,6 +84,9 @@ func ValidateConsumers(consumers []*configs_pb.Consumer) error {
 				return fmt.Errorf("consumer %s has duplicate lambda url: %s", consumer.GetGroupId(), lambda.GetUrl())
 			}
 			lambdasUrls[lambda.GetUrl()] = true
+			if err := validateGRPCTarget(lambda.GetUrl()); err != nil {
+				return fmt.Errorf("consumer %s: %w", consumer.GetGroupId(), err)
+			}
 			if lambda.GetTimeoutMs() > MaxLambdaTimeoutMs {
 				return fmt.Errorf("consumer %s lambda %s timeout_ms %d exceeds the maximum of %d", consumer.GetGroupId(), lambda.GetUrl(), lambda.GetTimeoutMs(), MaxLambdaTimeoutMs)
 			}
@@ -103,5 +108,26 @@ func Validate(cfg *Config) error {
 		return err
 	}
 
+	return nil
+}
+
+// validateGRPCTarget checks grpc:// and grpcs:// lambda URLs, which address a
+// host and port only. Other URLs are HTTP and are checked when called.
+func validateGRPCTarget(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "grpc", "grpcs":
+	default:
+		return nil
+	}
+	if u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("gRPC lambda url %q must be %s://host:port with no path, query, or credentials", u.Redacted(), strings.ToLower(u.Scheme))
+	}
+	if host, port, err := net.SplitHostPort(u.Host); err != nil || host == "" || port == "" {
+		return fmt.Errorf("gRPC lambda url %q must include a host and port", u.Redacted())
+	}
 	return nil
 }

@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
 )
 
 // maxRetryAfter caps how long a single Retry-After can pause a batch, so a
@@ -34,8 +36,12 @@ func (e *throttledError) transportName() string {
 	return e.transport
 }
 
-// describe names the status for logs, for example "HTTP 429".
+// describe names the status for logs, for example "HTTP 429" or
+// "gRPC ResourceExhausted".
 func (e *throttledError) describe() string {
+	if e.transport == transportGRPC {
+		return "gRPC " + codes.Code(e.status).String()
+	}
 	return fmt.Sprintf("%s %d", strings.ToUpper(e.transportName()), e.status)
 }
 

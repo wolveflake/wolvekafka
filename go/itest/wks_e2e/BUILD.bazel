@@ -4,6 +4,7 @@ go_test(
     name = "wks_e2e_test",
     srcs = [
         "delivery_integration_test.go",
+        "grpc_integration_test.go",
         "lag_integration_test.go",
         "rebalance_integration_test.go",
         "wks_e2e_integration_test.go",
@@ -18,6 +19,11 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
+        "@org_golang_google_genproto_googleapis_rpc//errdetails",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

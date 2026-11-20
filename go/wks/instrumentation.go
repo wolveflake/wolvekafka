@@ -194,6 +194,7 @@ func (i *instrumentation) recordLambdaResult(ctx context.Context, consumer strin
 // code on wks.lambda.throttled.
 var throttleStatusKeys = map[string]string{
 	transportHTTP: "http.status_code",
+	transportGRPC: "rpc.grpc.status_code",
 }
 
 func (i *instrumentation) recordLambdaThrottled(ctx context.Context, consumer string, jobID int, throttled *throttledError) {
