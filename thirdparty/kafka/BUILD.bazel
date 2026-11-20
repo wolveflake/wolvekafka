@@ -57,6 +57,8 @@ genrule(
         SCALA_VERSION,
         KAFKA_VERSION,
     ),
+    # Downloads the JRE and Kafka; Bazel 9 denies sandbox network by default.
+    tags = ["requires-network"],
     tools = [],
     visibility = ["//visibility:private"],
 )
