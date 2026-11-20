@@ -105,9 +105,9 @@ func (r *RetryPolicy) ExecuteBatch(ctx context.Context, req *model_pb.LambdaRequ
 				delay = throttled.retryAfter
 			}
 			if r.metrics != nil {
-				r.metrics.recordLambdaThrottled(ctx, r.consumerName, r.jobId, throttled.status)
+				r.metrics.recordLambdaThrottled(ctx, r.consumerName, r.jobId, throttled)
 			}
-			r.log.Warnf("[%s:%d] handler throttled (HTTP %d); retrying %d records in %v", r.consumerName, r.jobId, throttled.status, len(retry), delay)
+			r.log.Warnf("[%s:%d] handler throttled (%s); retrying %d records in %v", r.consumerName, r.jobId, throttled.describe(), len(retry), delay)
 		} else {
 			if r.metrics != nil {
 				r.metrics.recordLambdaRetry(ctx, r.consumerName, r.jobId, attempt+2, err)
