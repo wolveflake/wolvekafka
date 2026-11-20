@@ -1,0 +1,28 @@
+{
+  "cluster": {
+    "bootstrap_servers": ["kafka:9092"]
+  },
+  "consumers": [
+    {
+      "group_id": "orders-grpc",
+      "topics": ["orders"],
+      "lambdas": [
+        {"url": "grpc://handler-python:9090", "weight": 50, "timeout_ms": 10000},
+        {"url": "grpc://handler-go:9090", "weight": 50, "timeout_ms": 10000}
+      ],
+      "batch": {
+        "max_messages": 100,
+        "max_bytes": 1048576,
+        "max_wait_ms": 500
+      },
+      "retry_policy": {
+        "exponential_backoff": {
+          "initial_backoff_ms": 500,
+          "max_backoff_ms": 4000,
+          "multiplier": 2
+        },
+        "dlq": {"topic": "orders.dlq"}
+      }
+    }
+  ]
+}

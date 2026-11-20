@@ -84,6 +84,8 @@ system roots):
 "lambdas": [{"url": "grpc://orders-handler:9090", "timeout_ms": 10000}]
 ```
 
+Runnable Python and Go handlers are in [`examples/grpc`](../examples/grpc/README.md).
+
 The URL is `host:port` only. One consumer can mix HTTP and gRPC lambdas, so you
 can move traffic over gradually with weights. `timeout_ms` becomes the call's
 gRPC deadline, and trace context travels in the call metadata.
