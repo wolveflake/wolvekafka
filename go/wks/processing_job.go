@@ -4,19 +4,15 @@
 package wks
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
@@ -31,9 +27,6 @@ var (
 
 	// defaultLambdaTimeout bounds a lambda invocation when the lambda sets no timeout_ms.
 	defaultLambdaTimeout = 30 * time.Second
-
-	// lambdaHTTPClient is shared by all lambdas; each request carries its own deadline.
-	lambdaHTTPClient = &http.Client{}
 )
 
 // lambdaTimeout returns the per-request deadline for a lambda.
@@ -80,6 +73,9 @@ type ProcessingJob struct {
 	// retry policy handler.
 	retryPolicy *RetryPolicy
 
+	// transports that reach the handlers, created on first use.
+	transports *handlerTransports
+
 	// how often to refresh partition offsets for lag metrics; zero disables.
 	lagRefreshInterval time.Duration
 	// removes this worker's partitions from the lag gauges.
@@ -93,56 +89,27 @@ func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.L
 		return nil, nil
 	}
 
+	if c.transports == nil {
+		c.transports = newHandlerTransports()
+	}
 	sendOnce := func(ctx context.Context, batch *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error) {
 		lambda := c.lambdaSelector.Select()
-		timeout := lambdaTimeout(lambda)
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		payload, err := ConvertLambdaRequestToJson(batch)
+		transport, name, err := c.transports.forTarget(lambda)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal lambda request: %w", err)
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, lambda.GetUrl(), bytes.NewReader(payload))
-		if err != nil {
-
-			return nil, fmt.Errorf("failed to create http request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		// Let the handler join the batch's trace (traceparent, tracestate, baggage).
-		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
-
-		resp, err := lambdaHTTPClient.Do(req)
-		if err != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("lambda request timed out after %v: %w", timeout, err)
-			}
-			return nil, fmt.Errorf("failed to send lambda request: %w", err)
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("lambda request failed with status %d and read error: %w", resp.StatusCode, err)
-		}
-
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			reason := strings.TrimSpace(string(body))
-			if reason == "" {
-				reason = resp.Status
-			}
-			err := fmt.Errorf("lambda request failed with status %d: %s", resp.StatusCode, reason)
-			if throttled := throttleFromResponse(resp.StatusCode, resp.Header, time.Now(), err); throttled != nil {
-				return nil, throttled
-			}
 			return nil, err
 		}
-
-		respMsgs, err := ParseLambdaResponse(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal lambda response: %w", err)
+		trace.SpanFromContext(ctx).AddEvent("handler.call", trace.WithAttributes(
+			attribute.String("wks.handler.transport", name),
+			attribute.String("server.address", targetAddress(lambda.GetUrl())),
+		))
+		timeout := lambdaTimeout(lambda)
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		resp, err := transport.Send(callCtx, lambda, batch)
+		if err != nil && ctx.Err() == nil && errors.Is(callCtx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("lambda request timed out after %v: %w", timeout, err)
 		}
-
-		return respMsgs, nil
+		return resp, err
 	}
 
 	if c.retryPolicy == nil {
@@ -426,6 +393,12 @@ func (c *ProcessingJob) done() {
 		if c.retryPolicy != nil {
 			if err := c.retryPolicy.Close(); err != nil {
 				c.log.Errorf("[%v:%v] error closing retry policy: %v", c.consumerName, c.jobId, err)
+			}
+		}
+
+		if c.transports != nil {
+			if err := c.transports.Close(); err != nil {
+				c.log.Errorf("[%v:%v] error closing handler transports: %v", c.consumerName, c.jobId, err)
 			}
 		}
 	})

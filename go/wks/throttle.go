@@ -4,6 +4,7 @@
 package wks
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -15,15 +16,28 @@ import (
 var maxRetryAfter = 5 * time.Minute
 
 // throttledError reports that the handler asked WKS to slow down rather than
-// failing the records: HTTP 429, or 503 with a Retry-After header.
+// failing the records, for example HTTP 429, or 503 with a Retry-After header.
 type throttledError struct {
-	status     int
+	transport  string        // transport that reported it; empty means HTTP
+	status     int           // the transport's status code, such as 429
 	retryAfter time.Duration // zero when the handler did not say how long to wait
 	err        error
 }
 
 func (e *throttledError) Error() string { return e.err.Error() }
 func (e *throttledError) Unwrap() error { return e.err }
+
+func (e *throttledError) transportName() string {
+	if e.transport == "" {
+		return transportHTTP
+	}
+	return e.transport
+}
+
+// describe names the status for logs, for example "HTTP 429".
+func (e *throttledError) describe() string {
+	return fmt.Sprintf("%s %d", strings.ToUpper(e.transportName()), e.status)
+}
 
 // throttleFromResponse classifies a non-2xx handler response. It returns nil
 // when the response is an ordinary failure.
@@ -35,7 +49,7 @@ func throttleFromResponse(status int, header http.Header, now time.Time, err err
 	default:
 		return nil
 	}
-	return &throttledError{status: status, retryAfter: retryAfter, err: err}
+	return &throttledError{transport: transportHTTP, status: status, retryAfter: retryAfter, err: err}
 }
 
 // parseRetryAfter parses an HTTP Retry-After value given as delay-seconds or

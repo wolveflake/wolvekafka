@@ -61,7 +61,7 @@ func getInstrumentation() *instrumentation {
 			lambdaDurationMs:     buildFloat64Histogram(meter, "wks.lambda.duration_ms", "End-to-end duration spent invoking downstream lambdas.", metric.WithUnit("ms")),
 			lambdaFailures:       buildInt64Counter(meter, "wks.lambda.failures", "Number of lambda invocations that returned an error."),
 			lambdaRetries:        buildInt64Counter(meter, "wks.lambda.retries", "Number of lambda retry attempts triggered after a failure."),
-			lambdaThrottled:      buildInt64Counter(meter, "wks.lambda.throttled", "Number of lambda invocations throttled by the handler (HTTP 429, or 503 with Retry-After)."),
+			lambdaThrottled:      buildInt64Counter(meter, "wks.lambda.throttled", "Number of lambda invocations throttled by the handler (HTTP 429, or 503 with Retry-After), by transport."),
 			kafkaCommitErrors:    buildInt64Counter(meter, "wks.kafka.commit_errors", "Count of failures while committing Kafka offsets."),
 			outputErrors:         buildInt64Counter(meter, "wks.output.errors", "Number of failures while executing output policies."),
 		}
@@ -190,12 +190,22 @@ func (i *instrumentation) recordLambdaResult(ctx context.Context, consumer strin
 	}
 }
 
-func (i *instrumentation) recordLambdaThrottled(ctx context.Context, consumer string, jobID int, status int) {
-	if i == nil {
+// throttleStatusKeys maps a transport to the attribute that carries its status
+// code on wks.lambda.throttled.
+var throttleStatusKeys = map[string]string{
+	transportHTTP: "http.status_code",
+}
+
+func (i *instrumentation) recordLambdaThrottled(ctx context.Context, consumer string, jobID int, throttled *throttledError) {
+	if i == nil || throttled == nil {
 		return
 	}
 	ctx = ensureContext(ctx)
-	attrs := append(i.jobAttrs(consumer, jobID), attribute.Int("http.status_code", status))
+	transport := throttled.transportName()
+	attrs := append(i.jobAttrs(consumer, jobID), attribute.String("transport", transport))
+	if key, ok := throttleStatusKeys[transport]; ok {
+		attrs = append(attrs, attribute.Int(key, throttled.status))
+	}
 	i.lambdaThrottled.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 

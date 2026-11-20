@@ -143,7 +143,7 @@ WKS exports OpenTelemetry metrics and serves them for Prometheus on
 | `wks.kafka.messages_dropped` | Records explicitly dropped and committed |
 | `wks.lambda.duration_ms` | Handler invocation latency, as a histogram |
 | `wks.lambda.failures`, `wks.lambda.retries` | Handler errors and retry attempts |
-| `wks.lambda.throttled` | Handler throttling responses (429, or 503 with `Retry-After`), by `http.status_code` |
+| `wks.lambda.throttled` | Handler throttling responses (429, or 503 with `Retry-After`), by `transport` and `http.status_code` |
 | `wks.kafka.commit_errors`, `wks.output.errors` | Offset commit and output policy failures |
 | `wks.consumers.configured`, `wks.jobs.inflight` | Active consumer groups and in-flight jobs |
 | `wks.config.applied_total` | Configuration reloads applied at runtime |
