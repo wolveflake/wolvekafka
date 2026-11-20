@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 // The JSON sent to HTTP handlers is a public contract. A change here breaks
@@ -47,7 +47,7 @@ func TestHandlerResponseJSONIsPinned(t *testing.T) {
 
 // gRPC handlers are addressed by this method name, compiled into their code.
 func TestHandlerServiceMethodNameIsPinned(t *testing.T) {
-	services := model_pb.File_proto_wolvekafka_handler_v1_handler_proto.Services()
+	services := model_pb.File_proto_handler_v1_handler_proto.Services()
 	require.Equal(t, 1, services.Len())
 	method := services.Get(0).Methods().ByName("Handle")
 	require.NotNil(t, method)

@@ -16,7 +16,7 @@ syntax = "proto3";
 //     served alongside this one.
 package wolvekafka.handler.v1;
 
-option go_package = "wolvekafka/proto/wolvekafka/handler/v1;handlerv1";
+option go_package = "wolvekafka/proto/handler/v1;handlerv1";
 option java_multiple_files = true;
 option java_package = "io.wolveflake.wolvekafka.handler.v1";
 option csharp_namespace = "Wolveflake.WolveKafka.Handler.V1";

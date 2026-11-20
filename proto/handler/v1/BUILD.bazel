@@ -10,7 +10,7 @@ proto_library(
 
 go_proto_library(
     name = "handler_go_proto",
-    importpath = "wolvekafka/proto/wolvekafka/handler/v1",
+    importpath = "wolvekafka/proto/handler/v1",
     proto = ":handler_proto",
     visibility = ["//visibility:public"],
 )
@@ -18,6 +18,6 @@ go_proto_library(
 go_library(
     name = "handlerv1",
     embed = [":handler_go_proto"],
-    importpath = "wolvekafka/proto/wolvekafka/handler/v1",
+    importpath = "wolvekafka/proto/handler/v1",
     visibility = ["//visibility:public"],
 )

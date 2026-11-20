@@ -9,7 +9,7 @@ go_test(
         "//go/itest/fixture",
         "//go/wks",
         "//proto/configs",
-        "//proto/wolvekafka/handler/v1:handlerv1",
+        "//proto/handler/v1:handlerv1",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",
