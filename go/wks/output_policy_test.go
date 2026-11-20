@@ -12,7 +12,7 @@ import (
 
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

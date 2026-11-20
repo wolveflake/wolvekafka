@@ -21,7 +21,7 @@ import (
 	kafka_fixture "wolvekafka/go/itest/fixture"
 	"wolvekafka/go/wks"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 func TestWolveKafkaServiceRejoinsAfterBrokerRestart(t *testing.T) {

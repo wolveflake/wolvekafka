@@ -14,7 +14,7 @@ go_test(
         "//go/kafka",
         "//go/wks",
         "//proto/configs",
-        "//proto/model",
+        "//proto/handler/v1:handlerv1",
         "@com_github_stretchr_testify//require",
         "@com_github_twmb_franz_go//pkg/kgo",
         "@com_github_twmb_franz_go_pkg_kadm//:kadm",

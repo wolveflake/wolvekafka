@@ -15,7 +15,7 @@ import (
 
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 // TestRetryPolicyExecuteWithRetrySuccess ensures transient failures are retried until success.

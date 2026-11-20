@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 // Transport names, used in metrics, spans, and logs.

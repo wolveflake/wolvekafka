@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 func retryTestPolicy() *configs_pb.Consumer {

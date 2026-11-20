@@ -16,7 +16,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 // lambdaHTTPClient is shared by all HTTP targets; each request carries its own

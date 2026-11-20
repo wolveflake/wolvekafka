@@ -31,7 +31,7 @@ RUN protoc -I . --go_out=. --go_opt=module=wolvekafka \
     proto/configs/cluster.proto \
     proto/configs/consumer.proto \
     proto/configs/configs.proto \
-    proto/model/kafka_msg.proto
+    proto/handler/v1/handler.proto
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -buildvcs=false \
     -ldflags="-s -w -buildid= -X main.version=$VERSION -X main.commit=$VCS_REF" \
