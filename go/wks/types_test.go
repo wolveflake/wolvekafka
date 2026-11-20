@@ -11,7 +11,7 @@ import (
 
 	"wolvekafka/go/kafka"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
 )
 
 func TestSimpleConversion(t *testing.T) {

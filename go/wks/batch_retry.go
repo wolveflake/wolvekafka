@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
 )
 
 // BatchResult explicitly separates successful output from terminal dispositions.

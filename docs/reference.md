@@ -43,6 +43,12 @@ Always return an explicit status. An omitted status is protobuf enum value zero,
 which means retry—not success. See [delivery, retry, and migration semantics](delivery-and-security.md)
 before using WKS with production traffic.
 
+The messages are defined in
+[`proto/wolvekafka/handler/v1/handler.proto`](../proto/wolvekafka/handler/v1/handler.proto)
+(package `wolvekafka.handler.v1`). Within `v1`, fields are only ever added, and
+the JSON above stays stable; an incompatible change would ship as `v2`
+alongside it.
+
 Stripped of HTTP boilerplate, that is the whole of a handler:
 
 ```python

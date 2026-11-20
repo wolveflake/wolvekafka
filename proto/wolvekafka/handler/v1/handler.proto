@@ -3,8 +3,23 @@
 
 syntax = "proto3";
 
-package model;
-option go_package = "wolvekafka/proto/model";
+// The contract between WolveKafka and a handler.
+//
+// HTTP handlers receive LambdaRequest as JSON and reply with LambdaResponse as
+// JSON. gRPC handlers implement HandlerService. Both use the same messages.
+//
+// Compatibility rules for this package:
+//   - Fields may be added. Field numbers and names are never reused,
+//     renumbered, or given a new meaning; removed fields are reserved.
+//   - The JSON form sent to HTTP handlers stays byte-for-byte stable.
+//   - An incompatible change goes in a new package (wolvekafka.handler.v2),
+//     served alongside this one.
+package wolvekafka.handler.v1;
+
+option go_package = "wolvekafka/proto/wolvekafka/handler/v1;handlerv1";
+option java_multiple_files = true;
+option java_package = "io.wolveflake.wolvekafka.handler.v1";
+option csharp_namespace = "Wolveflake.WolveKafka.Handler.V1";
 
 enum MessageEncoding {
   // Default encoding (no specific encoding)
@@ -69,3 +84,11 @@ message LambdaResponse {
   repeated ResponseMessage messages = 1;
 }
 
+// HandlerService is implemented by gRPC handlers. WolveKafka calls Handle once
+// per batch, at /wolvekafka.handler.v1.HandlerService/Handle.
+service HandlerService {
+  // Handle processes a batch. The response must hold one ResponseMessage per
+  // input message, in the same order. Report a bad record with a per-record
+  // STATUS_FAILED rather than a call-level error.
+  rpc Handle(LambdaRequest) returns (LambdaResponse);
+}

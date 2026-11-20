@@ -19,7 +19,7 @@ import (
 
 	"wolvekafka/go/common/logger"
 	lambda "wolvekafka/go/lambda"
-	model_pb "wolvekafka/proto/model"
+	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
 )
 
 //go:embed landing
