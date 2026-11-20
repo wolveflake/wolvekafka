@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 func TestLambdaTimeoutDefaultsTo30Seconds(t *testing.T) {

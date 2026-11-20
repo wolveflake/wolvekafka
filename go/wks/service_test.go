@@ -16,7 +16,7 @@ import (
 
 	"wolvekafka/go/configs"
 	"wolvekafka/go/kafka"
-	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 func TestBasic(t *testing.T) {
