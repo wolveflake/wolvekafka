@@ -64,6 +64,57 @@ return json.dumps({"messages": results})
 
 The runnable version is [`examples/quickstart/handler.py`](../examples/quickstart/handler.py).
 
+### gRPC handlers
+
+A handler can be a gRPC service instead of an HTTP endpoint. It implements one
+unary method from `handler.proto`, using the same messages and per-record
+statuses as the JSON contract:
+
+```proto
+service HandlerService {
+  rpc Handle(LambdaRequest) returns (LambdaResponse);
+}
+```
+
+WKS calls `/wolvekafka.handler.v1.HandlerService/Handle`. Point a lambda at it
+with a `grpc://` URL (plaintext) or `grpcs://` (TLS, verified against the
+system roots):
+
+```json
+"lambdas": [{"url": "grpc://orders-handler:9090", "timeout_ms": 10000}]
+```
+
+The URL is `host:port` only. One consumer can mix HTTP and gRPC lambdas, so you
+can move traffic over gradually with weights. `timeout_ms` becomes the call's
+gRPC deadline, and trace context travels in the call metadata.
+
+Call-level errors map to the same outcomes as HTTP:
+
+| gRPC status | Treated as |
+| --- | --- |
+| `OK` | Per-record statuses apply, as with HTTP `2xx` |
+| `RESOURCE_EXHAUSTED` | Throttled, like `429`; waits `RetryInfo.retry_delay` if set |
+| `UNAVAILABLE` with `RetryInfo` | Throttled, like `503` with `Retry-After` |
+| `UNIMPLEMENTED`, `UNAUTHENTICATED`, `PERMISSION_DENIED` | Failed attempt, logged as a misconfigured handler |
+| Anything else | Failed attempt, retried under the `retry_policy` |
+
+Throttling waits are capped at five minutes and do not use up the retry budget.
+Report a bad record with a per-record `STATUS_FAILED`, not a call-level error,
+so the rest of the batch still succeeds.
+
+Deploying gRPC handlers:
+
+- **Spread load across replicas.** gRPC keeps one long-lived connection, which
+  a regular Kubernetes Service pins to a single pod. WKS resolves the host
+  through DNS and balances calls round-robin across every address, so give
+  handlers a [headless Service](https://kubernetes.io/docs/concepts/services-networking/service/#headless-services)
+  (`clusterIP: None`).
+- **Let new replicas join.** WKS re-resolves DNS when a connection breaks. Set
+  `MaxConnectionAge` (for example five minutes) on the handler's gRPC server so
+  connections recycle and newly started pods begin receiving calls.
+- **Message size.** gRPC servers reject requests over 4 MiB by default. Keep the
+  consumer's `batch.max_bytes` below the server's limit, or raise the limit.
+
 ## Configuration
 
 A minimal configuration looks like this:
@@ -100,10 +151,10 @@ Important options:
 
 - `cluster`: bootstrap servers plus optional SASL/PLAIN, SCRAM-SHA-256/512,
   TLS, and mTLS settings.
-- `lambdas`: one or more HTTP targets with optional weights. Retries select a
-  target again so a failed peer does not permanently pin a batch. Each target
-  takes an optional `timeout_ms` (default 30000, maximum 900000) for one
-  request, including reading the response. A timed-out request is retried
+- `lambdas`: one or more HTTP or [gRPC](#grpc-handlers) targets with optional
+  weights. Retries select a target again so a failed peer does not permanently
+  pin a batch. Each target takes an optional `timeout_ms` (default 30000,
+  maximum 900000) for one request, including reading the response. A timed-out request is retried
   under the consumer's `retry_policy`, so handlers that run long should be
   idempotent. A pending rebalance cancels the in-flight request regardless of
   `timeout_ms`, so a slow handler cannot hold partitions past a rebalance.
@@ -149,7 +200,7 @@ WKS exports OpenTelemetry metrics and serves them for Prometheus on
 | `wks.kafka.messages_dropped` | Records explicitly dropped and committed |
 | `wks.lambda.duration_ms` | Handler invocation latency, as a histogram |
 | `wks.lambda.failures`, `wks.lambda.retries` | Handler errors and retry attempts |
-| `wks.lambda.throttled` | Handler throttling responses (429, or 503 with `Retry-After`), by `transport` and `http.status_code` |
+| `wks.lambda.throttled` | Handler throttling responses (429, or 503 with `Retry-After`), by `transport` and `http.status_code` or `rpc.grpc.status_code` |
 | `wks.kafka.commit_errors`, `wks.output.errors` | Offset commit and output policy failures |
 | `wks.consumers.configured`, `wks.jobs.inflight` | Active consumer groups and in-flight jobs |
 | `wks.config.applied_total` | Configuration reloads applied at runtime |

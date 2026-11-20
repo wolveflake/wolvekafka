@@ -16,7 +16,9 @@ import (
 
 // Transport names, used in metrics, spans, and logs.
 const (
-	transportHTTP = "http"
+	transportHTTP  = "http"
+	transportGRPC  = "grpc"
+	transportGRPCS = "grpcs"
 )
 
 // handlerTransport is the mechanics of reaching a handler: connecting,
@@ -44,6 +46,10 @@ func transportForURL(rawURL string) string {
 		return transportHTTP
 	}
 	switch strings.ToLower(u.Scheme) {
+	case "grpc":
+		return transportGRPC
+	case "grpcs":
+		return transportGRPCS
 	default:
 		return transportHTTP
 	}
@@ -70,6 +76,10 @@ func (t *handlerTransports) forTarget(target *configs_pb.Lambda) (handlerTranspo
 	switch name {
 	case transportHTTP:
 		tr = &httpTransport{}
+	case transportGRPC:
+		tr = newGRPCTransport(false)
+	case transportGRPCS:
+		tr = newGRPCTransport(true)
 	default:
 		return nil, name, fmt.Errorf("unsupported handler transport %q", name)
 	}
