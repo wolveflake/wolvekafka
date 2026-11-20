@@ -23,7 +23,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 type grpcHandleFunc func(ctx context.Context, req *model_pb.LambdaRequest) (*model_pb.LambdaResponse, error)

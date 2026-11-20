@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	configs_pb "wolvekafka/proto/configs"
-	model_pb "wolvekafka/proto/wolvekafka/handler/v1"
+	model_pb "wolvekafka/proto/handler/v1"
 )
 
 const (
