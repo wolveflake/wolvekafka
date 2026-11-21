@@ -23,7 +23,23 @@ not a capacity benchmark. No throughput or latency target is claimed.
 | <http://127.0.0.1:3000/d/adpmcvw/wks> | Grafana dashboard, anonymous read-only access |
 | <http://127.0.0.1:9090/targets> | Verify Prometheus can scrape WKS |
 | <http://127.0.0.1:8080/metrics> | Raw Prometheus metrics |
-| <http://127.0.0.1:8080/health> | WKS process health, not proof of successful delivery |
+| <http://127.0.0.1:8080/health> | Liveness: the WKS process is up, not proof of successful delivery |
+| <http://127.0.0.1:8080/ready> | Readiness: every consumer has connected to Kafka and joined its group |
+
+`/ready` returns `200` when every worker of every consumer is a member of its
+consumer group (workers without assigned partitions count once they have
+joined), and `503` otherwise. The JSON body says which consumers are not ready
+and why:
+
+```json
+{"ready":false,"consumers":{"orders":{"ready":false,"workers":2,"ready_workers":0,
+  "reason":"joining consumer group: connect to kafka:9092: unable to dial: ..."}}}
+```
+
+Use `/ready` for Kubernetes readiness so a rollout with a bad configuration or
+an unreachable cluster stops, and keep `/health` for liveness so a Kafka outage
+does not restart pods. Readiness also drops briefly while a configuration reload
+recreates consumers.
 
 The Compose ports bind to loopback. This local demo uses anonymous Grafana
 viewing and ephemeral observability storage; configure authentication and

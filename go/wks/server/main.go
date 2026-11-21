@@ -57,6 +57,9 @@ func main() {
 			logger.S().Warnf("failed to stop WKS service: %v", closeErr)
 		}
 	}()
+	// /health stays a liveness check; /ready also requires every consumer to
+	// have connected to Kafka and joined its group.
+	srv.HTTPRouter.HandleFunc("/ready", wksService.ReadyHandler())
 	go wksService.WatchConfig(ctx, *configPath, 10*time.Second)
 	if err := srv.Serve(); err != nil {
 		logger.S().Fatalf("server stopped: %v", err)
