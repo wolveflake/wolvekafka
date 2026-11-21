@@ -16,6 +16,14 @@ serviceAccount:
 
 podAnnotations: {}
 
+# Graceful shutdown: on SIGTERM, WKS stops taking new batches and lets each
+# in-flight batch finish and commit for up to drainTimeout, then leaves its
+# consumer groups and exits. Keep terminationGracePeriodSeconds a few seconds
+# above drainTimeout. Set drainTimeout to "" if image.tag predates v0.3.0.
+shutdown:
+  drainTimeout: 20s
+terminationGracePeriodSeconds: 30
+
 podSecurityContext:
   runAsNonRoot: true
   seccompProfile:

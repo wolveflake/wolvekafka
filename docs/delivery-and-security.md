@@ -223,6 +223,25 @@ stuck shutdown and retry the reload or restart; this is not a validation rollbac
 Replacing certificate contents at an unchanged path alone does not recreate
 clients; change the certificate path in the JSON or restart WKS for rotation.
 
+## Shutdown
+
+On SIGTERM or SIGINT, WKS drains before it exits:
+
+1. Every worker stops taking new batches, and `/ready` reports
+   `draining for shutdown`. Idle workers stop at once.
+2. A worker that is processing a batch lets it finish: handler retries, output,
+   DLQ writes, and the offset commit all run as usual.
+3. Workers leave their consumer groups, so the partitions move to other pods
+   without waiting for a session timeout.
+
+`--shutdown_drain_timeout` (default `20s`) bounds the drain. Batches still
+unresolved when it expires are abandoned uncommitted, as before, and replayed
+by the partitions' next owner. Keep the drain timeout below the pod's
+termination grace period (the Helm chart sets `shutdown.drainTimeout: 20s` and
+`terminationGracePeriodSeconds: 30`). A handler whose `timeout_ms` exceeds the
+drain timeout may not finish in time. Configuration reloads still stop the
+affected workers immediately rather than draining them.
+
 ## Regression tests
 
 ```sh

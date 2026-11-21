@@ -88,6 +88,23 @@ type ProcessingJob struct {
 	liveConsumer atomic.Pointer[kafka.Consumer]
 	connectErr   atomic.Value // string: latest consumer creation error
 	stopped      atomic.Bool
+
+	// drainCh is closed to ask the worker to finish its current batch and
+	// stop without taking another one. Nil means the worker never drains.
+	drainCh   chan struct{}
+	drainOnce sync.Once
+	draining  atomic.Bool
+}
+
+// beginDrain asks the worker to stop after its in-flight batch resolves.
+func (c *ProcessingJob) beginDrain() {
+	if c.drainCh == nil {
+		return
+	}
+	c.drainOnce.Do(func() {
+		c.draining.Store(true)
+		close(c.drainCh)
+	})
 }
 
 func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error) {
@@ -135,6 +152,8 @@ func (c *ProcessingJob) createKafkaConsumer(consumerParams kafka.ConsumerParams)
 			select {
 			case <-c.ctx.Done():
 				return nil, fmt.Errorf("stopping consumer job for %s:%v", c.consumerName, c.jobId)
+			case <-c.drainCh:
+				return nil, fmt.Errorf("draining consumer job for %s:%v before it connected", c.consumerName, c.jobId)
 			case <-time.After(consumerRecreationInterval):
 			}
 			continue
@@ -214,8 +233,19 @@ func (c *ProcessingJob) Execute() {
 		var ok bool
 
 		select {
+		case <-c.drainCh:
+			// The previous batch is resolved and committed; take no more.
+			c.log.Infof("[%v:%v] drained; stopping", c.consumerName, c.jobId)
+			return
+		default:
+		}
+
+		select {
 		case <-c.ctx.Done():
 			// Leave unfinished input uncommitted for replay on the next owner.
+			return
+		case <-c.drainCh:
+			c.log.Infof("[%v:%v] drained; stopping", c.consumerName, c.jobId)
 			return
 		case msgs, ok = <-msgChan:
 			if !ok {
@@ -347,6 +377,9 @@ func (c *ProcessingJob) Execute() {
 func (c *ProcessingJob) readiness() (bool, string) {
 	if c.stopped.Load() {
 		return false, "worker stopped"
+	}
+	if c.draining.Load() {
+		return false, "draining for shutdown"
 	}
 	consumer := c.liveConsumer.Load()
 	if consumer == nil {

@@ -20,6 +20,7 @@ var (
 	showVersion = flag.Bool("version", false, "Print the WKS version and source revision, then exit.")
 	lagMetrics  = flag.String("lag_metrics", wks.LagByPartition, "Consumer lag reporting: \"partition\" (one series per partition), \"topic\" (summed per topic), or \"off\".")
 	lagRefresh  = flag.Duration("lag_refresh_interval", 15*time.Second, "How often each worker reads the newest partition offsets from Kafka for lag metrics.")
+	drainTime   = flag.Duration("shutdown_drain_timeout", 20*time.Second, "On SIGTERM, how long to let in-flight batches finish and commit before abandoning them for replay. Keep it below the pod's termination grace period.")
 	version     = "dev"
 	commit      = "unknown"
 )
@@ -52,11 +53,7 @@ func main() {
 		srv.Stop()
 		logger.S().Fatalf("failed to start WKS service: %v", err)
 	}
-	defer func() {
-		if closeErr := wksService.Close(); closeErr != nil {
-			logger.S().Warnf("failed to stop WKS service: %v", closeErr)
-		}
-	}()
+
 	// /health stays a liveness check; /ready also requires every consumer to
 	// have connected to Kafka and joined its group.
 	srv.HTTPRouter.HandleFunc("/ready", wksService.ReadyHandler())
@@ -64,4 +61,10 @@ func main() {
 	if err := srv.Serve(); err != nil {
 		logger.S().Fatalf("server stopped: %v", err)
 	}
+	// Serve returns on SIGTERM/SIGINT. Let in-flight batches finish and
+	// commit, then flush telemetry so the last batches are still reported.
+	if err := wksService.Shutdown(*drainTime); err != nil {
+		logger.S().Warnf("failed to stop WKS service: %v", err)
+	}
+	srv.Stop()
 }
