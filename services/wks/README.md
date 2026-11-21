@@ -29,7 +29,10 @@ helm show chart oci://ghcr.io/wolveflake/charts/wks --version 0.2.0
 helm template wks ./services/wks --set-file config.data=config.json
 ```
 
-The chart exposes HTTP health and Prometheus metrics on port 8080. The image
+The chart exposes HTTP health and Prometheus metrics on port 8080. Liveness
+uses `/health`; readiness uses `/ready`, which waits until every consumer has
+joined its Kafka group. `/ready` exists from WKS v0.3.0, so if you pin
+`image.tag` to an older release, set `readinessProbe.httpGet.path=/health`. The image
 repository can be overridden with `image.repository`; `image.tag` defaults to
 the chart release's `appVersion`. Set `image.pullSecrets` only for a private
 registry. See [`values.yaml`](values.yaml) for replicas, resource limits,

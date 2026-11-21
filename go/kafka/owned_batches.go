@@ -28,8 +28,13 @@ func (c *Consumer) pollOwnedBatches() chan []*Message {
 			pollCtx, pollCancel := context.WithTimeout(ctx, c.batchMaxWait)
 			fetches := c.franzClient.PollRecords(pollCtx, c.batchMaxMessages)
 			pollCancel()
-			logFetchErrors(c.log, fetches)
+			if err := logFetchErrors(c.log, fetches); err != nil {
+				c.lastFetchErr.Store(err.Error())
+			}
 			records := fetches.Records()
+			if len(records) > 0 {
+				c.lastFetchErr.Store("")
+			}
 			if c.lag != nil {
 				c.lag.fetched(records)
 			}
@@ -95,10 +100,14 @@ func replayOffsets(records []*Message) map[string]map[int32]kgo.EpochOffset {
 	return offsets
 }
 
-func logFetchErrors(log *zap.SugaredLogger, fetches kgo.Fetches) {
+// logFetchErrors logs fetch errors other than cancellation and returns the last one.
+func logFetchErrors(log *zap.SugaredLogger, fetches kgo.Fetches) error {
+	var last error
 	for _, e := range fetches.Errors() {
 		if !errors.Is(e.Err, context.Canceled) && !errors.Is(e.Err, context.DeadlineExceeded) {
 			log.Errorf("Kafka fetch failed for %s[%d]: %v", e.Topic, e.Partition, e.Err)
+			last = e.Err
 		}
 	}
+	return last
 }

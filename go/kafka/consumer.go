@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -82,6 +83,9 @@ type Consumer struct {
 	lag                *lagTracker
 	lagRefreshInterval time.Duration
 	lagDone            chan struct{}
+
+	// lastFetchErr is the latest fetch or group-management error, for GroupStatus.
+	lastFetchErr atomic.Value // string
 }
 
 type ConsumerParams struct {
@@ -135,6 +139,9 @@ func NewConsumer(ctx context.Context, params ConsumerParams) (*Consumer, error) 
 		kgo.ConsumeTopics(params.Topics...),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
 		kgo.DisableAutoCommit(),
+		// Group join failures (unreachable brokers, auth, ACLs) explain an
+		// unready consumer in GroupStatus.
+		kgo.WithHooks(groupErrorHook{consumer}),
 	)
 	if consumer.lag != nil {
 		opts = append(opts,

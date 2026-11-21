@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -82,6 +83,11 @@ type ProcessingJob struct {
 	unregisterLag func()
 
 	shutdownOnce sync.Once
+
+	// Readiness, read from other goroutines by the /ready handler.
+	liveConsumer atomic.Pointer[kafka.Consumer]
+	connectErr   atomic.Value // string: latest consumer creation error
+	stopped      atomic.Bool
 }
 
 func defaultSendEventFunc(c *ProcessingJob, ctx context.Context, req *model_pb.LambdaRequest) (*BatchResult, error) {
@@ -124,6 +130,7 @@ func (c *ProcessingJob) createKafkaConsumer(consumerParams kafka.ConsumerParams)
 		kafkaConsumer, err := c.newConsumerFunc(c.ctx, consumerParams)
 		if err != nil {
 			c.log.Errorf("failed to create kafka consumer for %s:%v, reason: %v", c.consumerName, c.jobId, err)
+			c.connectErr.Store(err.Error())
 
 			select {
 			case <-c.ctx.Done():
@@ -181,6 +188,7 @@ func (c *ProcessingJob) Execute() {
 		return
 	}
 	c.kafkaConsumer = kafkaConsumer
+	c.liveConsumer.Store(kafkaConsumer)
 	if c.metrics != nil && c.lagRefreshInterval > 0 {
 		c.unregisterLag = c.metrics.registerLagSource(c.consumerName, kafkaConsumer)
 	}
@@ -335,6 +343,28 @@ func (c *ProcessingJob) Execute() {
 	}
 }
 
+// readiness reports whether this worker is consuming, and why not otherwise.
+func (c *ProcessingJob) readiness() (bool, string) {
+	if c.stopped.Load() {
+		return false, "worker stopped"
+	}
+	consumer := c.liveConsumer.Load()
+	if consumer == nil {
+		if err, ok := c.connectErr.Load().(string); ok && err != "" {
+			return false, "connecting to Kafka: " + err
+		}
+		return false, "connecting to Kafka"
+	}
+	status := consumer.GroupStatus()
+	if !status.Joined {
+		if status.LastError != "" {
+			return false, "joining consumer group: " + status.LastError
+		}
+		return false, "joining consumer group"
+	}
+	return true, ""
+}
+
 // Retry the current phase without reading another input batch. In particular,
 // output and commit failures do not invoke a successful handler again.
 func (c *ProcessingJob) retryUntilResolved(ctx context.Context, fn func() error) error {
@@ -365,6 +395,7 @@ func (c *ProcessingJob) Cancel() {
 
 func (c *ProcessingJob) done() {
 	c.shutdownOnce.Do(func() {
+		c.stopped.Store(true)
 		c.log.Infof("[%v:%v] consumer job has been stopped", c.consumerName, c.jobId)
 
 		// cancel job context.

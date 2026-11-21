@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "connection.go",
         "consumer.go",
+        "group_status.go",
         "lag.go",
         "owned_batches.go",
         "producer.go",
