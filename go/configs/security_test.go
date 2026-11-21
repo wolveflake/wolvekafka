@@ -15,16 +15,18 @@ func TestSecurityValidation(t *testing.T) {
 		{SaslMechanism: "unknown"}, {SaslMechanism: "SCRAM-SHA-256"},
 		{Tls: &configs_pb.TLS{CaFile: "ca.pem"}},
 		{Tls: &configs_pb.TLS{Enabled: true, CertFile: "cert.pem"}},
-		// OAUTHBEARER needs complete client-credentials settings over https.
+		// oauthbearer needs complete client-credentials settings over https.
+		oauth(&configs_pb.OAuthBearer{TokenUrl: "https://idp/token", ClientId: "id"}),
+		oauth(&configs_pb.OAuthBearer{TokenUrl: "http://idp.example.com/token", ClientId: "id", ClientSecret: "s"}),
+		oauth(&configs_pb.OAuthBearer{TokenUrl: "/token", ClientId: "id", ClientSecret: "s"}),
+		// Token-based SASL cannot be mixed with the username/password fields.
+		{SaslUsername: "u", SaslPassword: "p", SaslAuth: oauth(validOAuth()).SaslAuth},
+		{SaslMechanism: "PLAIN", SaslAuth: oauth(validOAuth()).SaslAuth},
 		{SaslMechanism: "OAUTHBEARER"},
-		{SaslMechanism: "OAUTHBEARER", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "https://idp/token", ClientId: "id"}},
-		{SaslMechanism: "OAUTHBEARER", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "http://idp.example.com/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslMechanism: "OAUTHBEARER", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslMechanism: "OAUTHBEARER", SaslUsername: "u", SaslPassword: "p", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "https://idp/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslUsername: "u", SaslPassword: "p", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "https://idp/token", ClientId: "id", ClientSecret: "s"}},
-		// AWS_MSK_IAM takes no static credentials and requires TLS.
-		{SaslMechanism: "AWS_MSK_IAM"},
-		{SaslMechanism: "AWS_MSK_IAM", SaslUsername: "u", SaslPassword: "p", Tls: &configs_pb.TLS{Enabled: true}},
+		{SaslMechanism: "AWS_MSK_IAM", Tls: &configs_pb.TLS{Enabled: true}},
+		// aws_msk_iam requires TLS and no static credentials.
+		{SaslAuth: &configs_pb.Cluster_AwsMskIam{AwsMskIam: &configs_pb.AwsMskIam{}}},
+		{SaslUsername: "u", SaslPassword: "p", Tls: &configs_pb.TLS{Enabled: true}, SaslAuth: &configs_pb.Cluster_AwsMskIam{AwsMskIam: &configs_pb.AwsMskIam{}}},
 	} {
 		cluster.BootstrapServers = []string{"localhost:9092"}
 		assert.Error(t, ValidateCluster(cluster))
@@ -43,21 +45,38 @@ func TestProtoJSONPreservesPoliciesAndRejectsTypos(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func oauth(o *configs_pb.OAuthBearer) *configs_pb.Cluster {
+	return &configs_pb.Cluster{SaslAuth: &configs_pb.Cluster_Oauthbearer{Oauthbearer: o}}
+}
+
+func validOAuth() *configs_pb.OAuthBearer {
+	return &configs_pb.OAuthBearer{TokenUrl: "https://idp.example.com/token", ClientId: "id", ClientSecret: "s"}
+}
+
 func TestSecurityValidationAcceptsOAuthAndMSKIAM(t *testing.T) {
 	for _, cluster := range []*configs_pb.Cluster{
-		{SaslMechanism: "OAUTHBEARER", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "https://idp.example.com/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslMechanism: "oauthbearer", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "http://127.0.0.1:8080/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslMechanism: "OAUTHBEARER", Oauthbearer: &configs_pb.OAuthBearer{TokenUrl: "http://localhost/token", ClientId: "id", ClientSecret: "s"}},
-		{SaslMechanism: "AWS_MSK_IAM", Tls: &configs_pb.TLS{Enabled: true}},
+		oauth(validOAuth()),
+		oauth(&configs_pb.OAuthBearer{TokenUrl: "http://127.0.0.1:8080/token", ClientId: "id", ClientSecret: "s"}),
+		oauth(&configs_pb.OAuthBearer{TokenUrl: "http://localhost/token", ClientId: "id", ClientSecret: "s"}),
+		{SaslAuth: &configs_pb.Cluster_AwsMskIam{AwsMskIam: &configs_pb.AwsMskIam{}}, Tls: &configs_pb.TLS{Enabled: true}},
 	} {
 		cluster.BootstrapServers = []string{"localhost:9092"}
 		assert.NoError(t, ValidateCluster(cluster))
 	}
 }
 
-func TestOAuthBearerConfigFromJSON(t *testing.T) {
-	cfg, err := ParseConfigsJson([]byte(`{"cluster":{"bootstrap_servers":["b:9093"],"sasl_mechanism":"OAUTHBEARER","tls":{"enabled":true},"oauthbearer":{"token_url":"https://idp/token","client_id":"id","client_secret":"s","scopes":["kafka"],"audience":"aud","extensions":{"logicalCluster":"lkc-1"}}},"consumers":[]}`))
+func TestTokenSASLConfigFromJSON(t *testing.T) {
+	cfg, err := ParseConfigsJson([]byte(`{"cluster":{"bootstrap_servers":["b:9093"],"tls":{"enabled":true},"oauthbearer":{"token_url":"https://idp/token","client_id":"id","client_secret":"s","scopes":["kafka"],"audience":"aud","extensions":{"logicalCluster":"lkc-1"}}},"consumers":[]}`))
 	assert.NoError(t, err)
 	assert.Equal(t, "lkc-1", cfg.GetCluster().GetOauthbearer().GetExtensions()["logicalCluster"])
 	assert.NoError(t, ValidateCluster(cfg.GetCluster()))
+
+	cfg, err = ParseConfigsJson([]byte(`{"cluster":{"bootstrap_servers":["b:9098"],"tls":{"enabled":true},"aws_msk_iam":{}},"consumers":[]}`))
+	assert.NoError(t, err)
+	assert.NotNil(t, cfg.GetCluster().GetAwsMskIam())
+	assert.NoError(t, ValidateCluster(cfg.GetCluster()))
+
+	// Both members of the oneof at once is rejected by the parser.
+	_, err = ParseConfigsJson([]byte(`{"cluster":{"bootstrap_servers":["b:9098"],"tls":{"enabled":true},"aws_msk_iam":{},"oauthbearer":{}},"consumers":[]}`))
+	assert.Error(t, err)
 }

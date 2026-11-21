@@ -121,10 +121,12 @@ All consumers, output producers, and DLQ producers use the same cluster settings
 }
 ```
 
-Supported mechanisms: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`,
-[`OAUTHBEARER`](#oauth-oauthbearer), and [`AWS_MSK_IAM`](#aws-msk-iam).
-Credentials without a mechanism default to `PLAIN`. For the username/password
-mechanisms, both username and password are required.
+`sasl_mechanism` supports `PLAIN`, `SCRAM-SHA-256`, and `SCRAM-SHA-512`.
+Credentials without a mechanism default to `PLAIN`, and both username and
+password are required. For token-based SASL, set an
+[`oauthbearer`](#oauth-oauthbearer) or [`aws_msk_iam`](#aws-msk-iam) block
+instead; it selects the mechanism and cannot be combined with the
+`sasl_*` fields.
 TLS verifies certificates and hostnames, requires TLS 1.2 or newer, and uses
 system roots when `ca_file` is omitted. Client certificate/key files are optional
 for mTLS, but must be supplied together. `server_name` optionally overrides the
@@ -147,7 +149,6 @@ providers.
 {
   "cluster": {
     "bootstrap_servers": ["pkc-xxxxx.us-east-1.aws.confluent.cloud:9092"],
-    "sasl_mechanism": "OAUTHBEARER",
     "tls": {"enabled": true},
     "oauthbearer": {
       "token_url": "https://idp.example.com/oauth2/token",
@@ -181,8 +182,8 @@ unknown key in our integration tests.
 {
   "cluster": {
     "bootstrap_servers": ["b-1.mycluster.abc123.c2.kafka.us-east-1.amazonaws.com:9098"],
-    "sasl_mechanism": "AWS_MSK_IAM",
-    "tls": {"enabled": true}
+    "tls": {"enabled": true},
+    "aws_msk_iam": {}
   }
 }
 ```
@@ -191,8 +192,7 @@ Credentials come from the default AWS chain: environment variables, the shared
 config and credentials files, IAM roles for service accounts on EKS (web
 identity), ECS task roles, and EC2 instance profiles. Temporary credentials are
 refreshed automatically. The region is read from the broker hostname. TLS is
-required, and `sasl_username`, `sasl_password`, and `oauthbearer` must be
-omitted. The IAM role needs `kafka-cluster:Connect` plus the topic and group
+required. The block is empty today; future MSK options will go inside it. The IAM role needs `kafka-cluster:Connect` plus the topic and group
 permissions WKS uses (read input topics, describe and alter its consumer groups,
 and write output and DLQ topics).
 

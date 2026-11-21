@@ -49,12 +49,11 @@ func tokenServer(t *testing.T, status int) (*httptest.Server, *atomic.Int32) {
 func oauthCluster(tokenURL string) *configs_pb.Cluster {
 	return &configs_pb.Cluster{
 		BootstrapServers: []string{"localhost:9092"},
-		SaslMechanism:    "OAUTHBEARER",
-		Oauthbearer: &configs_pb.OAuthBearer{
+		SaslAuth: &configs_pb.Cluster_Oauthbearer{Oauthbearer: &configs_pb.OAuthBearer{
 			TokenUrl: tokenURL, ClientId: "wks", ClientSecret: "s3cret",
 			Scopes: []string{"kafka.write", "kafka.read"}, Audience: "wks-test",
 			Extensions: map[string]string{"logicalCluster": "lkc-1", "identityPoolId": "pool-1"},
-		},
+		}},
 	}
 }
 
@@ -111,7 +110,7 @@ func TestAWSMSKIAMSignsWithDefaultCredentialChain(t *testing.T) {
 
 	mechanism := clientMechanism(t, &configs_pb.Cluster{
 		BootstrapServers: []string{"b-1.demo.abc123.c2.kafka.us-east-1.amazonaws.com:9098"},
-		SaslMechanism:    "AWS_MSK_IAM",
+		SaslAuth:         &configs_pb.Cluster_AwsMskIam{AwsMskIam: &configs_pb.AwsMskIam{}},
 		Tls:              &configs_pb.TLS{Enabled: true},
 	})
 	require.Equal(t, "AWS_MSK_IAM", mechanism.Name())

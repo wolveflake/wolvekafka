@@ -32,6 +32,12 @@ const oauthTokenTimeout = 30 * time.Second
 // saslMechanism returns the SASL mechanism for a validated cluster, or nil
 // when the cluster does not use SASL.
 func saslMechanism(cluster *configs_pb.Cluster) (sasl.Mechanism, error) {
+	switch auth := cluster.GetSaslAuth().(type) {
+	case *configs_pb.Cluster_Oauthbearer:
+		return oauthBearerMechanism(auth.Oauthbearer), nil
+	case *configs_pb.Cluster_AwsMskIam:
+		return awsMSKIAMMechanism()
+	}
 	user, password := cluster.GetSaslUsername(), cluster.GetSaslPassword()
 	switch strings.ToUpper(cluster.GetSaslMechanism()) {
 	case "", "PLAIN":
@@ -43,10 +49,6 @@ func saslMechanism(cluster *configs_pb.Cluster) (sasl.Mechanism, error) {
 		return scram.Auth{User: user, Pass: password}.AsSha256Mechanism(), nil
 	case "SCRAM-SHA-512":
 		return scram.Auth{User: user, Pass: password}.AsSha512Mechanism(), nil
-	case "OAUTHBEARER":
-		return oauthBearerMechanism(cluster.GetOauthbearer()), nil
-	case "AWS_MSK_IAM":
-		return awsMSKIAMMechanism()
 	default:
 		return nil, fmt.Errorf("unsupported SASL mechanism %q", cluster.GetSaslMechanism())
 	}

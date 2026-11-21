@@ -27,32 +27,30 @@ func ValidateCluster(cluster *configs_pb.Cluster) error {
 	}
 	mechanism := strings.ToUpper(cluster.GetSaslMechanism())
 	hasUserPassword := cluster.GetSaslUsername() != "" || cluster.GetSaslPassword() != ""
-	switch mechanism {
-	case "", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512":
+	switch auth := cluster.GetSaslAuth().(type) {
+	case nil:
+		if mechanism != "" && mechanism != "PLAIN" && mechanism != "SCRAM-SHA-256" && mechanism != "SCRAM-SHA-512" {
+			return fmt.Errorf("unsupported SASL mechanism %q (use oauthbearer or aws_msk_iam for token-based SASL)", mechanism)
+		}
 		if mechanism != "" || hasUserPassword {
 			if cluster.GetSaslUsername() == "" || cluster.GetSaslPassword() == "" {
 				return fmt.Errorf("SASL requires both sasl_username and sasl_password")
 			}
 		}
-		if cluster.GetOauthbearer() != nil {
-			return fmt.Errorf("oauthbearer settings require sasl_mechanism OAUTHBEARER")
+	case *configs_pb.Cluster_Oauthbearer:
+		if mechanism != "" || hasUserPassword {
+			return fmt.Errorf("oauthbearer cannot be combined with sasl_username, sasl_password, or sasl_mechanism")
 		}
-	case "OAUTHBEARER":
-		if hasUserPassword {
-			return fmt.Errorf("OAUTHBEARER uses oauthbearer settings, not sasl_username or sasl_password")
-		}
-		if err := validateOAuthBearer(cluster.GetOauthbearer()); err != nil {
+		if err := validateOAuthBearer(auth.Oauthbearer); err != nil {
 			return err
 		}
-	case "AWS_MSK_IAM":
-		if hasUserPassword || cluster.GetOauthbearer() != nil {
-			return fmt.Errorf("AWS_MSK_IAM takes credentials from the default AWS chain; remove sasl_username, sasl_password, and oauthbearer")
+	case *configs_pb.Cluster_AwsMskIam:
+		if mechanism != "" || hasUserPassword {
+			return fmt.Errorf("aws_msk_iam cannot be combined with sasl_username, sasl_password, or sasl_mechanism")
 		}
 		if !cluster.GetTls().GetEnabled() {
-			return fmt.Errorf("AWS_MSK_IAM requires tls.enabled=true")
+			return fmt.Errorf("aws_msk_iam requires tls.enabled=true")
 		}
-	default:
-		return fmt.Errorf("unsupported SASL mechanism %q", mechanism)
 	}
 	if tls := cluster.GetTls(); tls != nil {
 		if !tls.GetEnabled() && (tls.GetCaFile() != "" || tls.GetCertFile() != "" || tls.GetKeyFile() != "" || tls.GetServerName() != "") {
@@ -67,7 +65,7 @@ func ValidateCluster(cluster *configs_pb.Cluster) error {
 
 func validateOAuthBearer(oauth *configs_pb.OAuthBearer) error {
 	if oauth == nil {
-		return fmt.Errorf("OAUTHBEARER requires oauthbearer settings")
+		return fmt.Errorf("oauthbearer settings are required")
 	}
 	if oauth.GetClientId() == "" || oauth.GetClientSecret() == "" {
 		return fmt.Errorf("oauthbearer requires client_id and client_secret")

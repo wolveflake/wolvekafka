@@ -185,11 +185,10 @@ func TestOAuthBearerAuthenticatesToRealKafka(t *testing.T) {
 	cfg, err := configs.NewConfigFromProto(&configs_pb.Config{
 		Cluster: &configs_pb.Cluster{
 			BootstrapServers: []string{fixture.BootstrapHost()},
-			SaslMechanism:    "OAUTHBEARER",
-			Oauthbearer: &configs_pb.OAuthBearer{
+			SaslAuth: &configs_pb.Cluster_Oauthbearer{Oauthbearer: &configs_pb.OAuthBearer{
 				TokenUrl: tokenSrv.URL + "/token", ClientId: "wks", ClientSecret: "s3cret",
 				Audience: oauthAudience,
-			},
+			}},
 		},
 		Consumers: []*configs_pb.Consumer{{
 			GroupId: group,
