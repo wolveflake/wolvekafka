@@ -121,8 +121,12 @@ All consumers, output producers, and DLQ producers use the same cluster settings
 }
 ```
 
-Supported mechanisms: `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`. Credentials
-without a mechanism default to `PLAIN`. Both username and password are required.
+`sasl_mechanism` supports `PLAIN`, `SCRAM-SHA-256`, and `SCRAM-SHA-512`.
+Credentials without a mechanism default to `PLAIN`, and both username and
+password are required. For token-based SASL, set an
+[`oauthbearer`](#oauth-oauthbearer) or [`aws_msk_iam`](#aws-msk-iam) block
+instead; it selects the mechanism and cannot be combined with the
+`sasl_*` fields.
 TLS verifies certificates and hostnames, requires TLS 1.2 or newer, and uses
 system roots when `ca_file` is omitted. Client certificate/key files are optional
 for mTLS, but must be supplied together. `server_name` optionally overrides the
@@ -131,8 +135,74 @@ disabled TLS with TLS options, and invalid certificate files are rejected.
 
 TLS is opt-in to retain compatibility with local plaintext Kafka; enable it for
 credentials sent over untrusted networks. Supply credentials through a protected
-configuration/Secret file, not a publicly readable ConfigMap. OAuth and AWS IAM
-mechanisms are not implemented. Environment-variable interpolation is not supported.
+configuration/Secret file, not a publicly readable ConfigMap. Environment-variable
+interpolation is not supported.
+
+### OAuth (OAUTHBEARER)
+
+WKS fetches tokens with the OAuth 2.0 client-credentials grant, caches one token
+for all of its Kafka clients, and fetches a new one shortly before it expires.
+This covers Confluent Cloud, Azure Event Hubs, Keycloak, Okta, and other OIDC
+providers.
+
+```json
+{
+  "cluster": {
+    "bootstrap_servers": ["pkc-xxxxx.us-east-1.aws.confluent.cloud:9092"],
+    "tls": {"enabled": true},
+    "oauthbearer": {
+      "token_url": "https://idp.example.com/oauth2/token",
+      "client_id": "wks",
+      "client_secret": "replace-with-secret",
+      "scopes": ["kafka"],
+      "audience": "kafka",
+      "extensions": {"logicalCluster": "lkc-xxxxx", "identityPoolId": "pool-xxxx"}
+    }
+  }
+}
+```
+
+`token_url`, `client_id`, and `client_secret` are required. `token_url` must use
+`https`, except on a loopback address. `scopes`, `audience`, and `extensions`
+are optional. Confluent Cloud needs the `logicalCluster` and `identityPoolId`
+extensions. For Azure Event Hubs, use
+`https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token` with the scope
+`https://<namespace>.servicebus.windows.net/.default`.
+
+If you run your own brokers with OAuth on Kafka 4.1, set
+`sasl.oauthbearer.jwt.validator.class=org.apache.kafka.common.security.oauthbearer.BrokerJwtValidator`
+in the broker configuration (globally; the per-listener form had no effect in
+our tests). Without it, a 4.1.0 broker configured with
+`OAuthBearerValidatorCallbackHandler` and a JWKS URL accepted tokens signed by an
+unknown key in our integration tests.
+
+### AWS MSK IAM
+
+```json
+{
+  "cluster": {
+    "bootstrap_servers": ["b-1.mycluster.abc123.c2.kafka.us-east-1.amazonaws.com:9098"],
+    "tls": {"enabled": true},
+    "aws_msk_iam": {}
+  }
+}
+```
+
+Credentials come from the default AWS chain: environment variables, the shared
+config and credentials files, IAM roles for service accounts on EKS (web
+identity), ECS task roles, and EC2 instance profiles. Temporary credentials are
+refreshed automatically. The region is read from the broker hostname. TLS is
+required. The block is empty today; future MSK options will go inside it. The IAM role needs `kafka-cluster:Connect` plus the topic and group
+permissions WKS uses (read input topics, describe and alter its consumer groups,
+and write output and DLQ topics).
+
+On EKS with the Helm chart, attach the role through the service account:
+
+```yaml
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/wks
+```
 
 ## Reload
 

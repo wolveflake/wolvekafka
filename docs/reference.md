@@ -152,7 +152,8 @@ A minimal configuration looks like this:
 Important options:
 
 - `cluster`: bootstrap servers plus optional SASL/PLAIN, SCRAM-SHA-256/512,
-  TLS, and mTLS settings.
+  [OAUTHBEARER](delivery-and-security.md#oauth-oauthbearer),
+  [AWS MSK IAM](delivery-and-security.md#aws-msk-iam), TLS, and mTLS settings.
 - `lambdas`: one or more HTTP or [gRPC](#grpc-handlers) targets with optional
   weights. Retries select a target again so a failed peer does not permanently
   pin a batch. Each target takes an optional `timeout_ms` (default 30000,

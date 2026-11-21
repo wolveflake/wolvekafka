@@ -20,6 +20,37 @@ message Cluster {
   // PLAIN (default when credentials are set), SCRAM-SHA-256 or SCRAM-SHA-512.
   string sasl_mechanism = 6;
   TLS tls = 7;
+
+  // Token- or identity-based SASL. Setting one selects the mechanism; it
+  // cannot be combined with sasl_username, sasl_password, or sasl_mechanism.
+  oneof sasl_auth {
+    // SASL OAUTHBEARER with the OAuth 2.0 client-credentials grant.
+    OAuthBearer oauthbearer = 8;
+    // SASL AWS_MSK_IAM with credentials from the default AWS chain. Requires TLS.
+    AwsMskIam aws_msk_iam = 9;
+  }
+}
+
+// AwsMskIam signs in with the default AWS credential chain (environment,
+// shared config, IRSA web identity, ECS, EC2). The region is read from the
+// broker hostname. Empty for now; options can be added here later.
+message AwsMskIam {}
+
+// OAuthBearer fetches tokens with the OAuth 2.0 client-credentials grant and
+// refreshes them before they expire.
+message OAuthBearer {
+  // Token endpoint, for example https://login.example.com/oauth2/token.
+  // Must be https unless it is a loopback address.
+  string token_url = 1;
+  string client_id = 2;
+  string client_secret = 3;
+  // Optional scopes to request.
+  repeated string scopes = 4;
+  // Optional audience parameter sent with the token request.
+  string audience = 5;
+  // Optional SASL extensions sent to the broker, for example logicalCluster
+  // and identityPoolId for Confluent Cloud.
+  map<string, string> extensions = 6;
 }
 
 message TLS {
