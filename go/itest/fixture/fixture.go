@@ -58,6 +58,7 @@ type DockerFixture struct {
 	containerName string
 	loaderScript  string
 	startupScript string
+	clientOpts    []kgo.Opt
 
 	stop func()
 }
@@ -110,6 +111,13 @@ func WithStartupScript(script string) DockerFixtureOption {
 	}
 }
 
+// WithClientOpts adds client options, such as SASL, to the readiness check.
+func WithClientOpts(opts ...kgo.Opt) DockerFixtureOption {
+	return func(f *DockerFixture) {
+		f.clientOpts = append(f.clientOpts, opts...)
+	}
+}
+
 // NewDockerFixture creates a fixture instance with sane defaults.
 func NewDockerFixture(tb testing.TB, opts ...DockerFixtureOption) *DockerFixture {
 	tb.Helper()
@@ -157,7 +165,7 @@ func (f *DockerFixture) Start(ctx context.Context) {
 	}
 	f.tb.Cleanup(f.Stop)
 
-	waitForBootstrap(ctx, f.tb, f.bootstrapHost, f.containerName)
+	waitForBootstrap(ctx, f.tb, f.bootstrapHost, f.containerName, f.clientOpts...)
 }
 
 // Stop tears down the Docker container if it is running.
@@ -194,12 +202,12 @@ func (f *DockerFixture) Restart(ctx context.Context) {
 		f.tb.Fatalf("failed to start Kafka container after restart: %v\n%s", err, string(output))
 	}
 
-	waitForBootstrap(ctx, f.tb, f.bootstrapHost, f.containerName)
+	waitForBootstrap(ctx, f.tb, f.bootstrapHost, f.containerName, f.clientOpts...)
 }
 
 // VerifyConnection checks that Kafka responds with metadata using confluent-kafka-go.
 func (f *DockerFixture) VerifyConnection() error {
-	return checkKafkaMetadata(f.bootstrapHost)
+	return checkKafkaMetadata(f.bootstrapHost, f.clientOpts...)
 }
 
 // BootstrapHost returns the address clients should use to reach the fixture.
@@ -337,7 +345,7 @@ func startKafkaContainer(ctx context.Context, tb testing.TB, containerName, imag
 	}
 }
 
-func waitForBootstrap(ctx context.Context, tb testing.TB, bootstrapHost, containerName string) {
+func waitForBootstrap(ctx context.Context, tb testing.TB, bootstrapHost, containerName string, clientOpts ...kgo.Opt) {
 	tb.Helper()
 
 	deadline := time.Now().Add(90 * time.Second)
@@ -357,7 +365,7 @@ func waitForBootstrap(ctx context.Context, tb testing.TB, bootstrapHost, contain
 		conn, err := net.DialTimeout("tcp", bootstrapHost, 2*time.Second)
 		if err == nil {
 			_ = conn.Close()
-			if err := checkKafkaMetadata(bootstrapHost); err == nil {
+			if err := checkKafkaMetadata(bootstrapHost, clientOpts...); err == nil {
 				return
 			}
 		}
@@ -367,10 +375,8 @@ func waitForBootstrap(ctx context.Context, tb testing.TB, bootstrapHost, contain
 }
 
 // checkKafkaMetadata verifies a Kafka connection by fetching metadata.
-func checkKafkaMetadata(bootstrapHost string) error {
-	client, err := kgo.NewClient(
-		kgo.SeedBrokers(bootstrapHost),
-	)
+func checkKafkaMetadata(bootstrapHost string, clientOpts ...kgo.Opt) error {
+	client, err := kgo.NewClient(append([]kgo.Opt{kgo.SeedBrokers(bootstrapHost)}, clientOpts...)...)
 	if err != nil {
 		return err
 	}

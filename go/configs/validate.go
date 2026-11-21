@@ -26,13 +26,33 @@ func ValidateCluster(cluster *configs_pb.Cluster) error {
 		}
 	}
 	mechanism := strings.ToUpper(cluster.GetSaslMechanism())
-	if mechanism != "" && mechanism != "PLAIN" && mechanism != "SCRAM-SHA-256" && mechanism != "SCRAM-SHA-512" {
-		return fmt.Errorf("unsupported SASL mechanism %q", mechanism)
-	}
-	if mechanism != "" || cluster.GetSaslUsername() != "" || cluster.GetSaslPassword() != "" {
-		if cluster.GetSaslUsername() == "" || cluster.GetSaslPassword() == "" {
-			return fmt.Errorf("SASL requires both sasl_username and sasl_password")
+	hasUserPassword := cluster.GetSaslUsername() != "" || cluster.GetSaslPassword() != ""
+	switch mechanism {
+	case "", "PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512":
+		if mechanism != "" || hasUserPassword {
+			if cluster.GetSaslUsername() == "" || cluster.GetSaslPassword() == "" {
+				return fmt.Errorf("SASL requires both sasl_username and sasl_password")
+			}
 		}
+		if cluster.GetOauthbearer() != nil {
+			return fmt.Errorf("oauthbearer settings require sasl_mechanism OAUTHBEARER")
+		}
+	case "OAUTHBEARER":
+		if hasUserPassword {
+			return fmt.Errorf("OAUTHBEARER uses oauthbearer settings, not sasl_username or sasl_password")
+		}
+		if err := validateOAuthBearer(cluster.GetOauthbearer()); err != nil {
+			return err
+		}
+	case "AWS_MSK_IAM":
+		if hasUserPassword || cluster.GetOauthbearer() != nil {
+			return fmt.Errorf("AWS_MSK_IAM takes credentials from the default AWS chain; remove sasl_username, sasl_password, and oauthbearer")
+		}
+		if !cluster.GetTls().GetEnabled() {
+			return fmt.Errorf("AWS_MSK_IAM requires tls.enabled=true")
+		}
+	default:
+		return fmt.Errorf("unsupported SASL mechanism %q", mechanism)
 	}
 	if tls := cluster.GetTls(); tls != nil {
 		if !tls.GetEnabled() && (tls.GetCaFile() != "" || tls.GetCertFile() != "" || tls.GetKeyFile() != "" || tls.GetServerName() != "") {
@@ -43,6 +63,32 @@ func ValidateCluster(cluster *configs_pb.Cluster) error {
 		}
 	}
 	return nil
+}
+
+func validateOAuthBearer(oauth *configs_pb.OAuthBearer) error {
+	if oauth == nil {
+		return fmt.Errorf("OAUTHBEARER requires oauthbearer settings")
+	}
+	if oauth.GetClientId() == "" || oauth.GetClientSecret() == "" {
+		return fmt.Errorf("oauthbearer requires client_id and client_secret")
+	}
+	u, err := url.Parse(oauth.GetTokenUrl())
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("oauthbearer token_url must be an absolute URL")
+	}
+	// The client secret is sent to this endpoint, so only loopback may skip TLS.
+	if !strings.EqualFold(u.Scheme, "https") && !(strings.EqualFold(u.Scheme, "http") && isLoopback(u.Hostname())) {
+		return fmt.Errorf("oauthbearer token_url must use https")
+	}
+	return nil
+}
+
+func isLoopback(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // MaxLambdaTimeoutMs is the largest accepted lambda timeout_ms (15 minutes).

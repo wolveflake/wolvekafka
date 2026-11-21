@@ -8,11 +8,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/sasl/plain"
-	"github.com/twmb/franz-go/pkg/sasl/scram"
 	"wolvekafka/go/configs"
 	configs_pb "wolvekafka/proto/configs"
 )
@@ -24,16 +21,12 @@ func ConnectionOptions(cluster *configs_pb.Cluster) ([]kgo.Opt, error) {
 		return nil, err
 	}
 	opts := []kgo.Opt{kgo.SeedBrokers(cluster.GetBootstrapServers()...)}
-	if cluster.GetSaslUsername() != "" {
-		user, password := cluster.GetSaslUsername(), cluster.GetSaslPassword()
-		switch strings.ToUpper(cluster.GetSaslMechanism()) {
-		case "", "PLAIN":
-			opts = append(opts, kgo.SASL(plain.Auth{User: user, Pass: password}.AsMechanism()))
-		case "SCRAM-SHA-256":
-			opts = append(opts, kgo.SASL(scram.Auth{User: user, Pass: password}.AsSha256Mechanism()))
-		case "SCRAM-SHA-512":
-			opts = append(opts, kgo.SASL(scram.Auth{User: user, Pass: password}.AsSha512Mechanism()))
-		}
+	mechanism, err := saslMechanism(cluster)
+	if err != nil {
+		return nil, err
+	}
+	if mechanism != nil {
+		opts = append(opts, kgo.SASL(mechanism))
 	}
 	if cfg := cluster.GetTls(); cfg.GetEnabled() {
 		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: cfg.GetServerName()}

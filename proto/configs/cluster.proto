@@ -17,9 +17,31 @@ message Cluster {
   // SASL password for authenticating with the Kafka cluster.
 	string sasl_password = 5;
 
-  // PLAIN (default when credentials are set), SCRAM-SHA-256 or SCRAM-SHA-512.
+  // PLAIN (default when credentials are set), SCRAM-SHA-256, SCRAM-SHA-512,
+  // OAUTHBEARER (configure oauthbearer), or AWS_MSK_IAM (credentials from the
+  // default AWS chain; requires TLS).
   string sasl_mechanism = 6;
   TLS tls = 7;
+
+  // OAuth 2.0 client-credentials settings for sasl_mechanism OAUTHBEARER.
+  OAuthBearer oauthbearer = 8;
+}
+
+// OAuthBearer fetches tokens with the OAuth 2.0 client-credentials grant and
+// refreshes them before they expire.
+message OAuthBearer {
+  // Token endpoint, for example https://login.example.com/oauth2/token.
+  // Must be https unless it is a loopback address.
+  string token_url = 1;
+  string client_id = 2;
+  string client_secret = 3;
+  // Optional scopes to request.
+  repeated string scopes = 4;
+  // Optional audience parameter sent with the token request.
+  string audience = 5;
+  // Optional SASL extensions sent to the broker, for example logicalCluster
+  // and identityPoolId for Confluent Cloud.
+  map<string, string> extensions = 6;
 }
 
 message TLS {
