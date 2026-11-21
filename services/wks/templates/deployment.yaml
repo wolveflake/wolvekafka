@@ -21,6 +21,9 @@ spec:
       {{- end }}
     spec:
       serviceAccountName: {{ include "wks.serviceAccountName" . }}
+      {{- with .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ . }}
+      {{- end }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -35,6 +38,9 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --config_path={{ .Values.config.path }}
+            {{- with .Values.shutdown.drainTimeout }}
+            - --shutdown_drain_timeout={{ . }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}

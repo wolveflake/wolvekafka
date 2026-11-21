@@ -320,9 +320,9 @@ func (s *Server) grpcServe() error {
 	return nil
 }
 
-// Serve accepts incoming connections (blocking call).
+// Serve runs until the context is cancelled or a stop signal arrives. Call
+// Stop afterwards to release the servers and flush telemetry.
 func (s *Server) Serve() error {
-	defer s.shutdownTelemetry()
 	go func() {
 		s.grpcServe()
 	}()

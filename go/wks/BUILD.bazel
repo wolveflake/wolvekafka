@@ -55,6 +55,7 @@ go_test(
         "batch_retry_test.go",
         "config_watcher_test.go",
         "contract_test.go",
+        "drain_test.go",
         "handler_timeout_test.go",
         "lag_metrics_test.go",
         "lambda_selector_test.go",

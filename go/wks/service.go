@@ -215,6 +215,7 @@ func (w *WolveKafkaService) updateConfig(config *configs.Config) error {
 						ConsumerCfg: consumerCfg,
 					}),
 
+					drainCh:            make(chan struct{}),
 					newConsumerFunc:    w.newConsumerFunc,
 					metrics:            w.metrics,
 					lagRefreshInterval: w.lagOpts.refreshInterval(),
@@ -277,6 +278,43 @@ func stopConsumers(refs []*consumerRef, timeout time.Duration) error {
 	case <-timer.C:
 		return fmt.Errorf("consumer shutdown exceeded %v; refusing to start overlapping workers", timeout)
 	}
+}
+
+// Shutdown drains, then closes the service. Every worker finishes and commits
+// the batch it is processing and takes no new one; workers that are idle stop
+// at once. Batches still unresolved after drainTimeout are abandoned
+// uncommitted, as Close does, and replayed by the partitions' next owner.
+func (w *WolveKafkaService) Shutdown(drainTimeout time.Duration) error {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	consumers, _ := w.consumers.Load().(map[string]*consumerRef)
+	w.mu.Unlock()
+	for _, ref := range consumers {
+		for _, job := range ref.jobs {
+			job.beginDrain()
+		}
+	}
+	done := make(chan struct{})
+	go func() {
+		for _, ref := range consumers {
+			if ref.wait != nil {
+				ref.wait.Wait()
+			}
+		}
+		close(done)
+	}()
+	start := time.Now()
+	timer := time.NewTimer(drainTimeout)
+	select {
+	case <-done:
+		w.log.Infof("drained all consumers in %v", time.Since(start).Round(time.Millisecond))
+	case <-timer.C:
+		w.log.Warnf("drain did not finish within %v; abandoning in-flight batches for replay", drainTimeout)
+	}
+	timer.Stop()
+	return w.Close()
 }
 
 // Close stops all managed consumers and releases resources.

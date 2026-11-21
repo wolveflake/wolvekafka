@@ -32,7 +32,10 @@ helm template wks ./services/wks --set-file config.data=config.json
 The chart exposes HTTP health and Prometheus metrics on port 8080. Liveness
 uses `/health`; readiness uses `/ready`, which waits until every consumer has
 joined its Kafka group. `/ready` exists from WKS v0.3.0, so if you pin
-`image.tag` to an older release, set `readinessProbe.httpGet.path=/health`. The image
+`image.tag` to an older release, set `readinessProbe.httpGet.path=/health` and
+`shutdown.drainTimeout=""`. On SIGTERM, WKS finishes and commits in-flight batches
+for up to `shutdown.drainTimeout` (default `20s`) before exiting; the pod's
+`terminationGracePeriodSeconds` (default `30`) must stay above it. The image
 repository can be overridden with `image.repository`; `image.tag` defaults to
 the chart release's `appVersion`. Set `image.pullSecrets` only for a private
 registry. See [`values.yaml`](values.yaml) for replicas, resource limits,
